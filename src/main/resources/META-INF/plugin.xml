@@ -1,0 +1,19 @@
+<idea-plugin>
+    <id>com.gigasan.localaiplugin</id>
+    <name>Local AI Plugin</name>
+    <version>0.1.0</version>
+    <vendor email="you@example.com">GigaSan</vendor>
+
+    <description>Простой локальный AI через LM Studio (без регистрации)</description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <actions>
+        <action id="LocalAI.AskLMStudio"
+                class="com.gigasan.localai.MyAction"
+                text="Ask Local AI (LM Studio)"
+                description="Отправить выделенный текст в локальный LM Studio">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
