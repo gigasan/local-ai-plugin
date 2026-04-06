@@ -1,19 +1,47 @@
 <idea-plugin>
     <id>com.gigasan.localaiplugin</id>
-    <name>Local AI Plugin</name>
-    <version>0.1.0</version>
-    <vendor email="you@example.com">GigaSan</vendor>
+    <name>Local AI Chat</name>
+    <version>0.2.0</version>
+    <vendor url="https://github.com/gigasan">GigaSan</vendor>
 
-    <description>Простой локальный AI через LM Studio (без регистрации)</description>
+    <description>
+        A lightweight AI chat tool integrated into your IDE.
+        Connect to local or self-hosted models using REST API (LM Studio, OpenAI-compatible, or custom endpoints).
+        Supports sending code snippets, files, and text with a user-friendly interface right in the workflow.
+    </description>
 
-    <depends>com.intellij.modules.platform</depends>
+    <dependencies>
+        <!-- Обязательный базовый модуль -->
+        <plugin id="com.intellij.modules.platform" />
+
+        <!-- Markdown (опциональный) -->
+        <plugin id="org.intellij.plugins.markdown" />
+    </dependencies>
 
     <actions>
-        <action id="LocalAI.AskLMStudio"
-                class="com.gigasan.localai.MyAction"
-                text="Ask Local AI (LM Studio)"
-                description="Отправить выделенный текст в локальный LM Studio">
+        <action id="LocalAI.Ask"
+                class="com.gigasan.localai.Ask"
+                text="Ask Local AI Model"
+                description="Send selected text into local chat">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
+
     </actions>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.gigasan.localai.PluginSettings"/>
+
+        <projectConfigurable
+                instance="com.gigasan.localai.PluginSettingsConfigurable"
+                displayName="Local AI Chat Settings"
+                id="LocalAI.Settings"/>
+
+        <toolWindow id="Local AI Chat"
+                    factoryClass="com.gigasan.localai.ChatToolWindowFactory"
+                    anchor="right"
+                    icon="/icons/chat.svg"
+                    secondary="true"
+        />
+    </extensions>
+
 </idea-plugin>
