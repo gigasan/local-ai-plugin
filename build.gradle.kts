@@ -14,6 +14,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     intellijPlatform {
         rustRover("2025.3.2")
+        bundledPlugin("org.intellij.plugins.markdown")
     }
 }
 
@@ -32,3 +33,4 @@ kotlin {
 tasks.buildSearchableOptions {
     enabled = false
 }
+
