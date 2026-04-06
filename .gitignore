@@ -19,3 +19,11 @@ gradle-app.setting
 .project
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
+
+
+.idea/
+.intellijPlatform/
+gradle/
+*.hprof
+gradlew.bat
+gradlew
