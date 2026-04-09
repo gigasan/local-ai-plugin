@@ -8,10 +8,11 @@ import java.net.HttpURLConnection
 import com.google.gson.JsonParser
 import com.google.gson.Strictness
 import com.google.gson.stream.JsonReader
+import com.intellij.openapi.diagnostic.Logger
 import java.io.StringReader
 
 object LocalAIService {
-
+    private val LOG = Logger.getInstance("LocalAIService")
 // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
     /**
@@ -38,7 +39,9 @@ object LocalAIService {
                 1 -> { // /v1/chat/completions (OpenAI-совместимый)
                     addProperty("model", selectedModel)
                     addProperty("stream", false)
-
+                    addProperty("max_tokens", 1000)
+                    addProperty("return_reasoning", false)
+                    addProperty("temperature", 0.0)
                     val messages = JsonArray()
                     messages.add(
                         JsonObject().apply {
@@ -140,7 +143,7 @@ object LocalAIService {
             val chatFull = buildChatUrl(settings)
 
             // Для отладки (как было в callLocalAI)
-            println("Calling AI endpoint: $chatFull")
+            //println("Calling AI endpoint: $chatFull")
 
             val requestBody = buildRequestBody(prompt, settings)
 
@@ -157,6 +160,7 @@ object LocalAIService {
 
             // Отправка тела
             val jsonBody = Gson().toJson(requestBody)
+            LOG.info("json body: $jsonBody")
             conn.outputStream.use {
                 it.write(jsonBody.toByteArray(Charsets.UTF_8))
             }
@@ -169,6 +173,7 @@ object LocalAIService {
 
             // Чтение ответа
             val jsonResponse = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+            LOG.info("jsonResponse: $jsonResponse")
 
             // 🔥 Парсинг по структуре JSON (без флагов!)
             var responseText = parseResponse(jsonResponse)

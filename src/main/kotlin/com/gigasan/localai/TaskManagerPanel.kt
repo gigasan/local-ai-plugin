@@ -1,5 +1,7 @@
 package com.gigasan.localai
 
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.ui.JBColor
 import javax.swing.*
 import java.awt.*
 import java.awt.event.ActionListener
@@ -8,6 +10,7 @@ import java.awt.Dimension
 import java.awt.event.ComponentAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseAdapter
+import kotlin.text.get
 
 data class TaskData(
     val id: String,
@@ -16,43 +19,62 @@ data class TaskData(
     var content: String,
     var zoneType: String,
     var job: String,
+    var answer: String,
+    var status: String,
 )
 
 class TaskManagerPanel : JPanel() {
     var onTasksChanged: (() -> Unit)? = null
 
-    private val taskList = mutableListOf<TaskData>()
+    val taskList = mutableListOf<TaskData>()
+    private val taskComponents = mutableMapOf<String, JPanel>()
+
+    private val LOG = Logger.getInstance("TaskManagerPanel")
 
     // Панель с задачами
-    private val tasksPanel = JPanel().apply {
+    private val tasksPanel: JPanel = object : JPanel(), Scrollable {
+
+        override fun getPreferredScrollableViewportSize(): Dimension {
+            return preferredSize
+        }
+
+        override fun getScrollableUnitIncrement(
+            visibleRect: Rectangle,
+            orientation: Int,
+            direction: Int
+        ): Int = 10
+
+        override fun getScrollableBlockIncrement(
+            visibleRect: Rectangle,
+            orientation: Int,
+            direction: Int
+        ): Int = 50
+
+        override fun getScrollableTracksViewportWidth(): Boolean = true
+
+        override fun getScrollableTracksViewportHeight(): Boolean = false
+
+    }.apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
     }
 
     init {
-
         layout = BorderLayout() // Главное исправление: BorderLayout для TaskManagerPanel
         val scrollPane  = JScrollPane(tasksPanel)
-        scrollPane .verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-        scrollPane .horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+        scrollPane.verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+        scrollPane.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
         add(scrollPane, BorderLayout.CENTER)
-
-
-        addComponentListener(object : ComponentAdapter() {
-            override fun componentResized(e: ComponentEvent) {
-                val width = tasksPanel.width
-                tasksPanel.components.forEach { comp ->
-                    comp.maximumSize = Dimension(width, comp.preferredSize.height)
-                }
-            }
-        })
+        LOG.info("TaskManagerPanel initialized")
     }
 
     // Добавление новой задачи
     fun addTask(task: TaskData, position: Int? = null) {
         val taskPanel = createTaskPanel(task)
+        taskComponents[task.id] = taskPanel
 
         // Максимальная ширина = ширина контейнера
         taskPanel.maximumSize = Dimension(Int.MAX_VALUE, taskPanel.preferredSize.height)
+        taskPanel.alignmentX = Component.LEFT_ALIGNMENT
 
         if (position == null || position >= tasksPanel.componentCount) {
             tasksPanel.add(taskPanel)
@@ -68,7 +90,33 @@ class TaskManagerPanel : JPanel() {
         //ChatPanel.instance?.rebuildMarkdownFromTasks()
     }
 
-    fun updateTask(task: TaskData) {
+    val base = UIManager.getColor("Panel.background")
+    val hover = JBColor(Color(255, 255, 200), Color(80, 80, 50))
+    val selected = JBColor(Color(200,230,255), Color(60,80,120))
+
+    // JS callback
+    fun selectTask(id: String) {
+        taskComponents.forEach { (_, comp) ->
+            comp.background = UIManager.getColor("Panel.background")
+        }
+
+        taskComponents[id]?.let {
+            it.background = Color(200, 230, 255)
+            it.scrollRectToVisible(it.bounds)
+        }
+    }
+    // JS callback
+    fun hoverTask(id: String) {
+        taskComponents[id]?.background = Color(255, 255, 200)
+    }
+    // JS callback
+    fun clearHover() {
+        taskComponents.forEach { (_, comp) ->
+            comp.background = UIManager.getColor("Panel.background")
+        }
+    }
+
+    fun updateTask() {
         onTasksChanged?.invoke()
     }
 
@@ -112,6 +160,7 @@ class TaskManagerPanel : JPanel() {
                     onTasksChanged?.invoke()
                 }
             })
+            ChatPanel.instance?.addContextMenu(area)
         }
 
         // Верхняя строка — description
@@ -156,8 +205,10 @@ class TaskManagerPanel : JPanel() {
         sendBtn.preferredSize = btnSize
         sendBtn.addActionListener {
             ChatPanel.instance?.sendTask(task)
-            tasksPanel.remove(panel)
-            taskList.remove(task)
+            task.status = "sent"
+            panel.isVisible = false
+            //tasksPanel.remove(panel)
+            //taskList.remove(task)
             tasksPanel.revalidate()
             tasksPanel.repaint()
             onTasksChanged?.invoke()
@@ -201,22 +252,24 @@ class TaskManagerPanel : JPanel() {
         return btn
     }
 
+    fun getAllTasks(): List<TaskData> = taskList
 
-    fun getAllTasks(): List<TaskData> {
-        // Синхронизируем описание из UI
+    fun syncTasksFromUI() {
         tasksPanel.components.forEachIndexed { index, comp ->
-            val panel = comp as JPanel
-            val centerPanel = panel.components.find { it is JPanel } as? JPanel
-            if (centerPanel != null) {
-                val textAreas = centerPanel.components.filterIsInstance<JTextArea>()
-                //val descriptionArea = textAreas.getOrNull(0)
-                val agentTaskArea = textAreas.getOrNull(1)
+            val panel = comp as? JPanel ?: return@forEachIndexed
+            val centerPanel = panel.components.find { it is JPanel } as? JPanel ?: return@forEachIndexed
+            val textAreas = centerPanel.components.filterIsInstance<JTextArea>()
 
-                //if (descriptionArea != null) taskList[index].description = descriptionArea.text
-                if (agentTaskArea != null) taskList[index].job = agentTaskArea.text
+            // Если нужно синхронизировать job с UI
+            val agentTaskArea = textAreas.getOrNull(1)
+            if (agentTaskArea != null) {
+                taskList.getOrNull(index)?.job = agentTaskArea.text
             }
+
+            // При желании можно синхронизировать description или другие поля аналогично
+            // val descriptionArea = textAreas.getOrNull(0)
+            // if (descriptionArea != null) taskList.getOrNull(index)?.description = descriptionArea.text
         }
-        return taskList
     }
 
     fun getTasksAt(indices: List<Int>): List<TaskData> {

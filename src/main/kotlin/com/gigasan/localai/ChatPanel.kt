@@ -1,30 +1,35 @@
 package com.gigasan.localai
 
-import com.intellij.testFramework.LightVirtualFile
-import com.intellij.openapi.Disposable
-import org.intellij.plugins.markdown.ui.preview.jcef.MarkdownJCEFHtmlPanel
-import com.intellij.openapi.project.Project
-import javax.swing.*
-import java.awt.*
-import java.awt.event.KeyEvent
-import javax.swing.SwingUtilities
-import org.intellij.plugins.markdown.ui.preview.html.MarkdownUtil
-import javax.swing.text.JTextComponent
-import java.awt.datatransfer.DataFlavor
-import java.io.File
-import javax.swing.border.LineBorder
-import com.intellij.ui.JBColor
-import com.intellij.ui.components.JBTextField
-import java.awt.event.FocusAdapter
-import java.awt.event.FocusEvent
-import java.awt.event.KeyAdapter
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.ide.ui.LafManager
-import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.ide.ui.LafManagerListener
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.ui.components.JBScrollPane
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.project.Project
+import com.intellij.testFramework.LightVirtualFile
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.jcef.JBCefApp
+import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefJSQuery
+import org.cef.browser.CefBrowser
+import org.cef.browser.CefFrame
+import org.cef.handler.CefLoadHandlerAdapter
+import org.intellij.plugins.markdown.ui.preview.html.MarkdownUtil
+import java.awt.BorderLayout
+import java.awt.Color
+import java.awt.Component
+import java.awt.Dimension
+import java.awt.datatransfer.DataFlavor
+import java.awt.dnd.*
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
+import java.io.File
+import javax.swing.*
+import javax.swing.text.JTextComponent
+import kotlin.system.exitProcess
+
 
 // Блок Markdown
 data class MarkdownBlock(
@@ -35,19 +40,17 @@ data class MarkdownBlock(
 
 class ChatPanel(val project: Project) : JPanel(BorderLayout()), Disposable {
     private var updateTimer: javax.swing.Timer? = null
-
+    private var jbCefBrowser = JBCefBrowser()   // или через builder, если нужно
+    // 2. Создаём jsQuery ТОЛЬКО после того, как браузер полностью создан
+    private lateinit var jsQuery: JBCefJSQuery   // используем lateinit
     private val markdownFile = LightVirtualFile("chat.md", "")   // dummy-файл для панели
-    private var markdownPanel = MarkdownJCEFHtmlPanel(project, markdownFile)
+    //private var markdownPanel = MarkdownJCEFHtmlPanel(project, markdownFile)
+    private var markdownPanel = JPanel()
     private val markdownBlocks = mutableListOf<MarkdownBlock>()
-
-    private lateinit var codeZone: JTextField
-    private lateinit var fileZone: JTextField
-    private lateinit var textZone: JTextField
     private val inputField = JTextField()
     private val sendButton = JButton("Send")
     private val taskManagerPanel = TaskManagerPanel()
-
-    private val LOG = Logger.getInstance("LocalAIChatPlugin")
+    private val LOG = Logger.getInstance("ChatPanel")
 
     companion object {
         var instance: ChatPanel? = null
@@ -66,17 +69,15 @@ class ChatPanel(val project: Project) : JPanel(BorderLayout()), Disposable {
         taskScroll.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
         taskContainer.add(taskScroll, BorderLayout.CENTER)
         taskContainer.minimumSize = Dimension(0, 0)
-        taskContainer.preferredSize = Dimension(0, 0)
+        taskContainer.preferredSize = Dimension(Int.MAX_VALUE, 0)
         taskContainer.maximumSize = Dimension(Int.MAX_VALUE, 150)
-
+        taskContainer.alignmentX = Component.LEFT_ALIGNMENT
         southPanel.add(taskContainer)
 
-        // --- Drop зоны ---
-        val dropZonesPanel = createDropZones()
-        //dropZonesPanel.minimumSize = dropZonesPanel.preferredSize
-        dropZonesPanel.maximumSize = Dimension(Int.MAX_VALUE, dropZonesPanel.preferredSize.height)
-        dropZonesPanel.alignmentX = Component.LEFT_ALIGNMENT
-        southPanel.add(dropZonesPanel)
+        // поставить drop на southPanel
+        installDropHandler(southPanel)
+        inputField.dropTarget = null
+        sendButton.dropTarget = null
 
         // --- Панель ввода ---
         val inputPanel = JPanel(BorderLayout())
@@ -103,7 +104,18 @@ class ChatPanel(val project: Project) : JPanel(BorderLayout()), Disposable {
         }
 
         // --- Добавляем southPanel под markdownPanel ---
-        add(markdownPanel.component, BorderLayout.CENTER)
+        if (!JBCefApp.isSupported()) {
+            LOG.error("JBCefApp is not supported!")
+            /* fallback */
+            exitProcess(0)
+        } else {
+            LOG.info("JBCefApp is supported!")
+            jbCefBrowser = JBCefBrowser()
+            markdownPanel.add(jbCefBrowser.component)
+            addJbCefBrowserHandler()
+        }
+
+        add(markdownPanel, BorderLayout.CENTER)
         add(southPanel, BorderLayout.SOUTH)
 
         // --- Логика (без изменений) ---
@@ -123,99 +135,66 @@ class ChatPanel(val project: Project) : JPanel(BorderLayout()), Disposable {
 
         refreshMarkdownPanel()
         addContextMenu(inputField)
+        LOG.info("ChatPanel initialized")
     }
 
+    // --- Drag-and-Drop ---
+    private fun installDropHandler(panel: JPanel) {
 
-    // --- Создание зон Drag-and-Drop ---
-    private fun createDropZones(): JPanel {
-        val zonesPanel = JPanel(GridLayout(1, 3, 5, 0))
+        val dropTarget = DropTarget(panel, DnDConstants.ACTION_COPY, object : DropTargetAdapter() {
 
-        // Зона 1: Оборачивает в код
-        codeZone = createZone("Код", "Code") { data ->
-            val text = data as? String ?: ""
-            "```\n$text\n```"
-        }
-
-        // Зона 2: Пути к файлам
-        fileZone = createZone("Файлы", "File") { data ->
-            val files = data as? List<File>
-            files?.joinToString("\n") ?: ""
-        }
-
-        // Зона 3: Обычный текст
-        textZone = createZone("Текст", "text") { data -> data as? String ?: "" }
-
-        zonesPanel.add(codeZone)
-        zonesPanel.add(fileZone)
-        zonesPanel.add(textZone)
-
-        return zonesPanel
-    }
-
-    private fun createZone(placeholder: String, type: String, onDrop: (Any?) -> String): JTextField {
-        val field = JBTextField(placeholder)
-        field.horizontalAlignment = JTextField.CENTER
-        field.preferredSize = Dimension(0, 45)
-        field.border = LineBorder(JBColor.GRAY, 1)
-        field.background = JBColor.PanelBackground
-        field.putClientProperty("zoneType", type)
-
-        addContextMenu(field)
-
-        // Очистка плейсхолдера при фокусе
-        field.addFocusListener(object : FocusAdapter() {
-            override fun focusGained(e: FocusEvent) {
-                if (field.text == placeholder) field.text = ""
-            }
-            override fun focusLost(e: FocusEvent) {
-                if (field.text.isEmpty()) field.text = placeholder
-            }
-        })
-
-        // Drag-and-Drop
-        field.transferHandler = object : TransferHandler() {
-
-            override fun canImport(support: TransferSupport): Boolean {
-                support.dropAction = COPY
-                return support.isDataFlavorSupported(DataFlavor.stringFlavor) ||
-                        support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
+            override fun dragEnter(dtde: DropTargetDragEvent) {
+                // Можно добавить подсветку при наведении
             }
 
-            override fun importData(support: TransferSupport): Boolean {
-                if (!canImport(support)) return false
+            override fun drop(event: DropTargetDropEvent) {
                 try {
-                    val zoneType = field.getClientProperty("zoneType") as String
+                    val comp = event.dropTargetContext.component
 
-                    var newTask = TaskData(
-                        id = System.currentTimeMillis().toString(),
-                        title = "",
-                        description = "",
-                        content = "",
-                        zoneType = "",
-                        job = "check errors",
-                    )
+                    // Проверяем, что дроп не попал на кнопку или inputField
+                    if (comp is JButton || comp is JTextField) {
+                        event.rejectDrop()
+                        return
+                    }
 
-                    val transferable = support.transferable
+                    val transferable = event.transferable
 
-                    // files only
-                    if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                        val files = transferable.getTransferData(DataFlavor.javaFileListFlavor) as List<File>
-                        val fileNames = files.map { it.name }
-                        val filesWithPath = files.map { it.absolutePath }
-                        newTask.title = "📂"
-                        newTask.description = fileNames.joinToString(" ")
-                        newTask.content = filesWithPath.joinToString("\n")
-                        newTask.zoneType = "File"
-                    } else if (support.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                    // --- Файлы ---
+                    if (event.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                        event.acceptDrop(DnDConstants.ACTION_COPY)
+                        val data = transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>
+                        val files = data?.filterIsInstance<File>() ?: emptyList()
+                        val task = TaskData(
+                            id = System.currentTimeMillis().toString(),
+                            title = "📂",
+                            description = files.joinToString(" ") { it.name },
+                            content = files.joinToString("\n") { it.absolutePath },
+                            zoneType = "File",
+                            job = "check errors",
+                            answer = "",
+                            status = "created",
+                        )
+                        taskManagerPanel.addTask(task)
+                        event.dropComplete(true)
+
+                        // --- Текст ---
+                    } else if (event.isDataFlavorSupported(DataFlavor.stringFlavor)) {
+                        event.acceptDrop(DnDConstants.ACTION_COPY)
                         val droppedText = transferable.getTransferData(DataFlavor.stringFlavor) as String
                         val editorData = getEditorContext(project)
-                        if (editorData != null && droppedText == editorData.third) {
+                        val task = if (editorData != null && droppedText == editorData.third) {
                             // editor context
                             val (fileName, lines, text) = editorData
-                            newTask.title = "📝"
-                            newTask.description = "$fileName ${lines.first}-${lines.last}"
-                            newTask.content = text
-                            newTask.zoneType = "Editor"
+                            TaskData(
+                                id = System.currentTimeMillis().toString(),
+                                title = "📝",
+                                description = "$fileName ${lines.first}-${lines.last}",
+                                content = text,
+                                zoneType = "Editor",
+                                job = "check errors",
+                                answer = "",
+                                status = "created",
+                            )
                         } else {
                             // any other data
                             val previewLength = 50 // сколько первых символов показывать
@@ -225,34 +204,30 @@ class ChatPanel(val project: Project) : JPanel(BorderLayout()), Disposable {
                             } else {
                                 processed
                             }
-                            newTask.title = "📄"
-                            newTask.description = preview
-                            newTask.content = droppedText
-                            newTask.zoneType = "External"
+                            TaskData(
+                                id = System.currentTimeMillis().toString(),
+                                title = "📄",
+                                description = preview,
+                                content = droppedText,
+                                zoneType = "External",
+                                job = "check errors",
+                                answer = "",
+                                status = "created",
+                            )
                         }
+                        taskManagerPanel.addTask(task)
+                        event.dropComplete(true)
+                    } else {
+                        event.rejectDrop()
                     }
-                    if (newTask.content.isNotBlank()) {
-                        taskManagerPanel.addTask(newTask)
-                    }
-
-                    // сброс плейсхолдера
-                    SwingUtilities.invokeLater {
-                        field.text = placeholder
-                    }
-
-                    field.requestFocus()
-                    return true
                 } catch (e: Exception) {
                     LOG.error(e)
-                    return false
+                    event.rejectDrop()
                 }
             }
-        }
-        return field
-    }
-
-    fun onTaskUpdated() {
-        rebuildMarkdownFromTasks()
+        }, true)
+        // Привязываем DropTarget к панели
+        panel.dropTarget = dropTarget
     }
 
     fun scheduleMarkdownUpdate() {
@@ -268,103 +243,131 @@ class ChatPanel(val project: Project) : JPanel(BorderLayout()), Disposable {
         markdownBlocks.clear()
         val tasks = taskManagerPanel.getAllTasks()
         tasks.forEach { task ->
-
+            //LOG.info("task-id: ${task.id}")
             val blockText = buildString {
-                append("<details style='margin-bottom:8px;'>\n")
-                append("<summary style='cursor:pointer;'>${task.title} ${task.description}</summary>\n\n")
-
                 val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
                 val instant = java.time.Instant.ofEpochMilli(task.id.toLong())
-                val dateTime = java.time.ZonedDateTime.ofInstant(
-                    instant,
-                    java.time.ZoneId.systemDefault()
-                )
-
-                if (task.content.isNotBlank()) {
-                    append("```text\n")
-                    append(task.content)
-                    append("\n```\n")
-                    append(task.job)
-                    append("\n\n")
-                    append(dateTime.format(formatter))
-                }
-
+                val dateTime = java.time.ZonedDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
+                append("<details data-task-id='${task.id}' style='margin-bottom:8px;'>")
+                append("<summary data-task-id='${task.id}' style='cursor:pointer;'>${task.title} ${task.description}</summary>\n")
+                append("<pre><code>")
+                append(task.content.replace("<", "&lt;").replace(">", "&gt;"))
+                append("</code></pre>\n")
+                append("<pre><code>")
+                append(task.answer.replace("<", "&lt;").replace(">", "&gt;"))
+                append("</code></pre>\n")
+                append("<p>${task.job}</p>")
+                append("<p>${dateTime.format(formatter)}</p>")
                 append("</details>\n")
             }
-
-            markdownBlocks.add(
-                MarkdownBlock(
-                    id = task.id,
-                    content = blockText,
-                    description = task.description,
-                )
+            val markdownBlock = MarkdownBlock(
+                id = task.id,
+                content = blockText,
+                description = task.description,
             )
+            //LOG.info("blockText: $blockText")
+            markdownBlocks.add(markdownBlock)
         }
         refreshMarkdownPanel()
     }
 
+    fun sendTask(task: TaskData) {
+
+    }
 
     private fun sendMessage() {
         val mainText = inputField.text.trim()
+        if (mainText.isEmpty()) return
 
-//        val tasksToSend = taskManagerPanel.getTasksAt(listOf(0,2)) // отправляем задачи с индексами 0 и 2
-//        tasksToSend.forEach { task ->
-//            LocalAIService.callLocalAI(task.description)
-//        }
-
-        // Извлекаем данные из зон, если они не пустые и не содержат плейсхолдер
-        val codeData = if (codeZone.text != "Код" && codeZone.text.isNotBlank()) codeZone.text else ""
-        val fileData = if (fileZone.text != "Файлы" && fileZone.text.isNotBlank()) fileZone.text else ""
-        val textData = if (textZone.text != "Текст" && textZone.text.isNotBlank()) textZone.text else ""
-
-        val parts = listOf(mainText, codeData, fileData, textData).filter { it.isNotBlank() }
-        if (parts.isEmpty()) return
-
-        LOG.info("codeData: ${codeData.trim()}")
-        LOG.info("fileData: ${fileData.trim()}")
-        LOG.info("textData: ${textData.trim()}")
-
-        // Создаём новый блок
-        val block = MarkdownBlock(
+        // Создаём новую задачу
+        val task = TaskData(
             id = System.currentTimeMillis().toString(),
-            content = parts.joinToString("\n\n"),
-            description = "",
+            title = "✏️",
+            description = "chat message",
+            content = mainText,
+            zoneType = "Chat",
+            job = "",
+            answer = "",
+            status = "created"
         )
-        markdownBlocks.add(block)
-        refreshMarkdownPanel()
-
-        // Очищаем поля
+        taskManagerPanel.addTask(task)
         inputField.text = ""
-        codeZone.text = "Код"
-        fileZone.text = "Файлы"
-        textZone.text = "Текст"
 
-        // Логика вызова AI
+        // Обновляем статус на "sending"
+        updateTaskStatus(task, "sending")
+
+        // Подготовка запроса к AI
+        val request = "${task.job} ${task.content}"
+
         Thread {
+            val startTime = System.currentTimeMillis()
             try {
-                val response = LocalAIService.callLocalAI(block.content)
-                SwingUtilities.invokeLater {
-                    val responseBlock = MarkdownBlock(
-                        id = System.currentTimeMillis().toString(),
-                        content = "**AI:**\n$response",
-                        description = "",
-                    )
-                    markdownBlocks.add(responseBlock)
-                    refreshMarkdownPanel()
-                }
+                val response = LocalAIService.callLocalAI(request)
+                val endTime = System.currentTimeMillis()
+
+                val durationText = formatDuration(endTime - startTime)
+
+                // Обновляем задачу
+                task.answer = response
+                task.description = "Ответ получен за $durationText"
+                task.status = "done"
+
+                updateTaskOnUI(task)
             } catch (e: Exception) {
-                SwingUtilities.invokeLater {
-                    val errorBlock = MarkdownBlock(
-                        id = System.currentTimeMillis().toString(),
-                        content = "**Ошибка:** ${e.message}",
-                        description = "",
-                    )
-                    markdownBlocks.add(errorBlock)
-                    refreshMarkdownPanel()
-                }
+                task.description = "**Ошибка:** ${e.message}"
+                task.status = "error"
+                updateTaskOnUI(task)
             }
         }.start()
     }
+
+    // Обновление задачи в taskList и вызов onTasksChanged
+    private fun updateTaskOnUI(task: TaskData) {
+        SwingUtilities.invokeLater {
+            val index = taskManagerPanel.getAllTasks().indexOfFirst { it.id == task.id }
+            if (index != -1) {
+                taskManagerPanel.taskList[index] = task
+            }
+            taskManagerPanel.onTasksChanged?.invoke()
+        }
+    }
+
+    // Обновление статуса задачи
+    private fun updateTaskStatus(task: TaskData, status: String) {
+        task.status = status
+        updateTaskOnUI(task)
+    }
+
+    // Форматирование времени в hh:mm:ss:ms
+    private fun formatDuration(durationMs: Long): String {
+        val totalSeconds = durationMs / 1000
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+        val milliseconds = durationMs % 1000
+        return String.format("%02d:%02d:%02d:%03d", hours, minutes, seconds, milliseconds)
+    }
+
+    fun sendExternalMessage(text: String) {
+//        chatMarkdown += "**Вы:** $text\n\n"
+//        refreshMarkdownPanel()
+//
+//        Thread {
+//            try {
+//                val response = callLocalAI(text)
+//                SwingUtilities.invokeLater {
+//                    chatMarkdown += "**AI:**\n$response\n\n---\n\n"
+//                    refreshMarkdownPanel()
+//                }
+//            } catch (e: Exception) {
+//                SwingUtilities.invokeLater {
+//                    chatMarkdown += "**Ошибка:** ${e.message}\n\n---\n\n"
+//                    refreshMarkdownPanel()
+//                }
+//            }
+//        }.start()
+    }
+
     fun Color.toHex() = "#%02x%02x%02x".format(red, green, blue)
 
     private fun refreshMarkdownPanel() {
@@ -379,56 +382,64 @@ class ChatPanel(val project: Project) : JPanel(BorderLayout()), Disposable {
         val panelBg  = UIManager.getColor("Panel.background") ?: Color.WHITE
         val textColor = UIManager.getColor("Label.foreground") ?: Color.BLACK
         val codeBg = EditorColorsManager.getInstance().globalScheme.defaultBackground
-
         val styledHtml = """
-        <html>
-        <head>
-            <style>
-                body {
-                    background-color: ${panelBg.toHex()};
-                    color: ${textColor.toHex()};
-                    margin: 0;
-                    padding: 8px;
-                }
-                pre, code {
-                    background-color: ${codeBg.toHex()};
-                }
-            </style>
-        </head>
-        <body>
-            $rawHtml
-        </body>
-        </html>
-        """.trimIndent()
+                            <html>
+                            <head>
+                                <style>
+                                    .task-hover {
+                                        background-color: rgba(255,255,0,0.2);
+                                    }
+                                    body {
+                                        background-color: ${panelBg.toHex()};
+                                        color: ${textColor.toHex()};
+                                        margin: 0;
+                                        padding: 8px;
+                                    }
+                                    pre, code {
+                                        background-color: ${codeBg.toHex()};
+                                    }
+                                </style>
+                            </head>
+                            <body>
+                                $rawHtml
+                                <script>
+                                    document.addEventListener("DOMContentLoaded", () => {
+                                        attachHandlers(); // твоя функция в JS
+                                    });
+                                </script>            
+                            </body>
+                            </html>
+                        """.trimIndent()
 
-        markdownPanel.createImmediately()
-        //markdownPanel.setHtml("", 0)
-        markdownPanel.setHtml(styledHtml, 0)
+        jbCefBrowser.loadHTML(styledHtml)
+        //markdownPanel.set createImmediately()
+        //markdownPanel.setHtml(styledHtml, 0)
+        val jsCode = this::class.java.getResource("/js/taskHandlers.js")?.readText()?: throw kotlinx.io.files.FileNotFoundException(
+            "taskHandlers.js not found in resources"
+        )
+        jbCefBrowser.cefBrowser.executeJavaScript(jsCode, "", 0)
+
+//        )
+//        markdownPanel.cefBrowser.executeJavaScript(jsCode, markdownPanel.cefBrowser.url, 0)
+        //LOG.info("styledHtml: $styledHtml");
         scrollToBottom()
     }
 
-    private fun scrollToBottom() {
-        markdownPanel.cefBrowser.executeJavaScript(
-            "window.scrollTo(0, document.body.scrollHeight);",
-            markdownPanel.cefBrowser.url, 0
-        )
-    }
-
     private fun recreateMarkdownPanel() {
-        remove(markdownPanel.component)
-
-        val newPanel = MarkdownJCEFHtmlPanel(project, markdownFile)
-        add(newPanel.component, BorderLayout.CENTER)
-
-        markdownPanel = newPanel
-
-        revalidate()
-        repaint()
-
+//
+//        remove(markdownPanel)
+//        //val newPanel = MarkdownJCEFHtmlPanel(project, markdownFile)
+//        val newPanel = JPanel()
+//        newPanel.add(jbCefBrowser.component)
+//        //addCefBrowserHandler(newPanel)
+//        add(newPanel, BorderLayout.CENTER)
+//        markdownPanel = newPanel
+//        revalidate()
+//        repaint()
         refreshMarkdownPanel()
     }
 
-    private fun addContextMenu(textComponent: JTextComponent) {
+    fun addContextMenu(textComponent: JTextComponent) {
         val menu = JPopupMenu()
 
         val cutItem = JMenuItem("Вырезать").apply { addActionListener { textComponent.cut() } }
@@ -471,36 +482,106 @@ class ChatPanel(val project: Project) : JPanel(BorderLayout()), Disposable {
         return Triple(fileName, startLine..endLine, text)
     }
 
+
+
     override fun dispose() {
         // Очистка ресурсов при закрытии
     }
 
-    fun sendTask(task: TaskData) {
+//    // --- Создаём JS Query для текущего браузера ---
+//    private val jsQuery: JBCefJSQuery = run {
+//        //val cefBrowser = jbCefBrowser.cefBrowser
+//        JBCefJSQuery.create(jbCefBrowser)
+//    }
+
+    private fun addJbCefBrowserHandler() {
+        val cefBrowser = jbCefBrowser.cefBrowser
+
+        jsQuery = JBCefJSQuery.create(jbCefBrowser)   // ← самый стабильный способ сейчас
+        // 2. Обработка сообщений от JS
+        jsQuery.addHandler(::handleJsQuery)
+
+
+        // Добавляем LoadHandler (чтобы инжектить при перезагрузках страницы)
+        val loadHandler = object : CefLoadHandlerAdapter() {
+            override fun onLoadEnd(browser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
+                if (frame?.isMain == true) {
+                    injectTaskHandlers(cefBrowser)
+                }
+            }
+        }
+        jbCefBrowser.jbCefClient.addLoadHandler(loadHandler, jbCefBrowser.cefBrowser)
+
+        // Первый инжект сразу
+        injectTaskHandlers(cefBrowser)
     }
 
-    fun sendExternalMessage(text: String) {
-//        chatMarkdown += "**Вы:** $text\n\n"
-//        refreshMarkdownPanel()
-//
-//        Thread {
-//            try {
-//                val response = callLocalAI(text)
-//                SwingUtilities.invokeLater {
-//                    chatMarkdown += "**AI:**\n$response\n\n---\n\n"
-//                    refreshMarkdownPanel()
-//                }
-//            } catch (e: Exception) {
-//                SwingUtilities.invokeLater {
-//                    chatMarkdown += "**Ошибка:** ${e.message}\n\n---\n\n"
-//                    refreshMarkdownPanel()
-//                }
-//            }
-//        }.start()
+    // Функция для инъекции bridge + загрузки твоего JS
+    private fun injectTaskHandlers(cefBrowser: CefBrowser?) {
+        if (!::jsQuery.isInitialized) {
+            LOG.error("jsQuery ещё не инициализирован")
+            return
+        }
+
+        // 1. Сначала создаём jsQuery
+        //val jsQuery = JBCefJSQuery.create(cefBrowser as com.intellij.ui.jcef.JBCefBrowserBase)
+
+        val bridgeScript = """
+        if (!window.taskBridge) {
+            window.taskBridge = {
+                send: function(msg) {
+                    ${jsQuery.inject("msg")}   // ← только здесь используется inject
+                }
+            };
+        }
+        """.trimIndent()
+
+        // Сначала создаём bridge
+        cefBrowser?.executeJavaScript(bridgeScript, null, 0)
+
+        // Потом загружаем твой taskHandlers.js (как строку)
+        val taskHandlersJs = loadTaskHandlersJs()   // см. ниже
+
+        cefBrowser?.executeJavaScript(taskHandlersJs, null, 0)
     }
 
-    fun addUserMessage(text: String) {
-        //chatMarkdown += "**Вы:** $text\n\n"
-        //refreshMarkdownPanel()
+    private fun loadTaskHandlersJs(): String {
+        return this::class.java.getResource("/js/taskHandlers.js")?.readText()
+            ?: error("Cannot load taskHandlers.js")
+    }
+
+    private fun handleJsQuery(arg: String): JBCefJSQuery.Response? {
+        println("JS → Kotlin: $arg")
+        // обработка...
+        SwingUtilities.invokeLater {
+            when {
+                arg.startsWith("click:") -> {
+                    val id = arg.removePrefix("click:")
+                    taskManagerPanel.selectTask(id)
+                }
+                arg == "hover:exit" -> taskManagerPanel.clearHover()
+                arg.startsWith("hover:") -> {
+                    val id = arg.removePrefix("hover:")
+                    taskManagerPanel.hoverTask(id)
+                }
+            }
+        }
+        //JBCefJSQuery.Response("OK: $queryArgument обработано")
+        return JBCefJSQuery.Response("success")
+    }
+
+
+
+
+    private fun scrollToBottom() {
+        jbCefBrowser.cefBrowser.executeJavaScript(
+            "window.scrollTo(0, document.body.scrollHeight);",
+            jbCefBrowser.cefBrowser.url, 0
+        )
+    }
+
+    fun onTaskUpdated() {
+        rebuildMarkdownFromTasks()
     }
 
 

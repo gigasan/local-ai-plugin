@@ -13,7 +13,7 @@
     <dependencies>
         <!-- Обязательный базовый модуль -->
         <plugin id="com.intellij.modules.platform" />
-
+        <plugin id="com.intellij.modules.lang" />
         <!-- Markdown (опциональный) -->
         <plugin id="org.intellij.plugins.markdown" />
     </dependencies>
