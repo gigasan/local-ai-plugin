@@ -13,15 +13,18 @@ repositories {
 dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     intellijPlatform {
-        rustRover("2025.3.2")
+        //rustRover("2025.3.2")
+        intellijIdea("2026.1")
+        //jcef() // КРИТИЧЕСКИ ВАЖНО для доступа к org.cef.*
         bundledPlugin("org.intellij.plugins.markdown")
+        bundledPlugin("JavaScript")
     }
 }
 
 intellijPlatform {
     pluginConfiguration {
         name = "Local AI Plugin"
-        version = "0.1.0"
+        version = "0.2.0"
     }
 }
 
