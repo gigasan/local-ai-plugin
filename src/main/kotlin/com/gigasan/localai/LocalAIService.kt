@@ -9,7 +9,20 @@ import com.google.gson.JsonParser
 import com.google.gson.Strictness
 import com.google.gson.stream.JsonReader
 import com.intellij.openapi.diagnostic.Logger
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headers
 import java.io.StringReader
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Response
+import java.io.IOException
 
 object LocalAIService {
     private val LOG = Logger.getInstance("LocalAIService")
@@ -18,13 +31,17 @@ object LocalAIService {
     /**
      * Формирует URL в зависимости от chatEndpointIndex (оставляем логику как была).
      */
-    private fun buildChatUrl(settings: PluginSettings): String {
+    fun buildChatUrl(settings: PluginSettings): String {
         return when (settings.chatEndpointIndex) {
             0 -> settings.baseUrl.trimEnd('/') + "/api/v1/chat"
             1 -> settings.baseUrl.trimEnd('/') + "/v1/chat/completions"
             2 -> settings.baseUrl.trimEnd('/') + "/v1/responses"
             else -> settings.baseUrl.trimEnd('/') + settings.chatEndpoint.trim()
         }
+    }
+
+    fun buildChatModel(settings: PluginSettings): String {
+        return settings.selectedModelKey.orEmpty()
     }
 
     /**
@@ -130,6 +147,46 @@ object LocalAIService {
                 ?: ""
         }
     }
+
+    // "https://api.openai.com/v1/responses"
+    suspend fun createResponse(url: String, model: String, prompt: String): String {
+        val client = HttpClient(CIO)
+
+        val response: JsonObject = client.post(url) {
+            headers {
+                append(HttpHeaders.Authorization, "Bearer YOUR_API_KEY")
+                append(HttpHeaders.ContentType, "application/json")
+            }
+            setBody("""{
+            "model": "$model",
+            "input": "$prompt"
+        }""")
+        }.body()
+
+        return response.toString()
+    }
+
+
+    // https://api.openai.com/v1/responses
+    fun createRequest(url: String, model: String, prompt: String): Request {
+
+
+        val json = """
+                    {
+                      "model": "$model",
+                      "input": "$prompt"
+                    }
+                    """
+
+        val request = Request.Builder()
+            .url("$url")
+            .addHeader("Authorization", "Bearer YOUR_API_KEY")
+            .post(json.toRequestBody("application/json".toMediaType()))
+            .build()
+
+        return request
+    }
+
 
     /**
      * Общая реализация HTTP-запроса + обработка ошибок.
