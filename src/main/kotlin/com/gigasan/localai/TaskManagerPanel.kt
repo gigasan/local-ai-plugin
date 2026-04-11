@@ -4,23 +4,32 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.ui.JBColor
 import javax.swing.*
 import java.awt.*
-import java.awt.event.ActionListener
-import java.awt.event.ComponentEvent
 import java.awt.Dimension
-import java.awt.event.ComponentAdapter
 import java.awt.event.MouseEvent
 import java.awt.event.MouseAdapter
-import kotlin.text.get
+
+
+enum class TaskStatus {
+    CREATED,
+    PENDING,
+    SENDING,
+    SENT,
+    RUNNING,
+    DONE,
+    ERROR
+}
 
 data class TaskData(
     val id: String,
     var title: String,
-    var description: String,
+    var hint: String,
+    //var description: String,
     var content: String,
     var zoneType: String,
-    var job: String,
+    var request: String,
     var answer: String,
-    var status: String,
+    var reasoning: String,
+    var status: TaskStatus,
 )
 
 class TaskManagerPanel : JPanel() {
@@ -29,7 +38,7 @@ class TaskManagerPanel : JPanel() {
     val taskList = mutableListOf<TaskData>()
     private val taskComponents = mutableMapOf<String, JPanel>()
 
-    private val LOG = Logger.getInstance("TaskManagerPanel")
+    private val logger = Logger.getInstance("TaskManagerPanel")
 
     // Панель с задачами
     private val tasksPanel: JPanel = object : JPanel(), Scrollable {
@@ -64,7 +73,7 @@ class TaskManagerPanel : JPanel() {
         scrollPane.verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
         scrollPane.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
         add(scrollPane, BorderLayout.CENTER)
-        LOG.info("TaskManagerPanel initialized")
+        logger.info("TaskManagerPanel initialized")
     }
 
     // Добавление новой задачи
@@ -172,12 +181,12 @@ class TaskManagerPanel : JPanel() {
 //        centerPanel.add(descriptionArea)
 
         // Нижняя строка — задание для агента
-        val agentTaskArea = JTextArea(task.job)
+        val agentTaskArea = JTextArea(task.request)
         //agentTaskArea.maximumSize = Dimension(Int.MAX_VALUE, agentTaskArea.preferredSize.height)
 //        agentTaskArea.lineWrap = false
 //        //agentTaskArea.wrapStyleWord = true
 //        agentTaskArea.isEditable = true
-        setup(agentTaskArea) { task.job = it }
+        setup(agentTaskArea) { task.request = it }
         centerPanel.add(agentTaskArea)
 
         panel.add(centerPanel, BorderLayout.CENTER)
@@ -205,7 +214,7 @@ class TaskManagerPanel : JPanel() {
         sendBtn.preferredSize = btnSize
         sendBtn.addActionListener {
             ChatPanel.instance?.sendTask(task)
-            task.status = "sent"
+            task.status = TaskStatus.SENT
             panel.isVisible = false
             //tasksPanel.remove(panel)
             //taskList.remove(task)
@@ -252,7 +261,7 @@ class TaskManagerPanel : JPanel() {
         return btn
     }
 
-    fun getAllTasks(): List<TaskData> = taskList
+    public fun getAllTasks(): List<TaskData> = taskList
 
     fun syncTasksFromUI() {
         tasksPanel.components.forEachIndexed { index, comp ->
@@ -263,7 +272,7 @@ class TaskManagerPanel : JPanel() {
             // Если нужно синхронизировать job с UI
             val agentTaskArea = textAreas.getOrNull(1)
             if (agentTaskArea != null) {
-                taskList.getOrNull(index)?.job = agentTaskArea.text
+                taskList.getOrNull(index)?.request = agentTaskArea.text
             }
 
             // При желании можно синхронизировать description или другие поля аналогично

@@ -1,111 +1,32 @@
 package com.gigasan.localai
 
 import com.intellij.openapi.diagnostic.Logger
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
-private val LOG = Logger.getInstance("AIRequest")
-
-data class AIRequest(
-    val model: String,
-    val system: String? = null,
-    val input: String,
-    val temperature: Double? = null,
-    val maxTokens: Int? = null,
-    val metadata: Map<String, String> = emptyMap()
-)
-
-class AIRequestBuilder {
-
-    private var model: String = "gpt-4"
-    private var system: String? = null
-    private var input: String = ""
-
-    private var temperature: Double? = null
-    private var maxTokens: Int? = null
-
-    private val metadata = mutableMapOf<String, String>()
-
-    fun model(value: String) = apply { model = value }
-
-    fun system(value: String) = apply { system = value }
-
-    fun input(value: String) = apply { input = value }
-
-    fun temperature(value: Double) = apply { temperature = value }
-
-    fun maxTokens(value: Int) = apply { maxTokens = value }
-
-    fun meta(key: String, value: String) = apply {
-        metadata[key] = value
-    }
-
-    fun build(): AIRequest {
-        return AIRequest(
-            model = model,
-            system = system,
-            input = input,
-            temperature = temperature,
-            maxTokens = maxTokens,
-            metadata = metadata
-        )
-    }
-
-
-    fun AIRequest.toJson(): String {
-        return kotlinx.serialization.json.buildJsonObject {
-
-            put("model", model)
-            put("input", input)
-
-            system?.let { put("system", it) }
-
-            temperature?.let { put("temperature", it) }
-            maxTokens?.let { put("max_tokens", it) }
-
-            putJsonArray("tools") {
-                // преобразуем tools
-            }
-
-            metadata.forEach { (k, v) ->
-                put("meta_$k", v)
-            }
-        }.toString()
-    }
-
-
-
-}
-
-fun AIRequest.toHttpRequest(url: String, apiKey: String): Request {
-    val json = buildJsonObject {
-
-        put("model", model)
-
-        val fullInput = buildString {
-            system?.let { append("System: $it\n\n") }
-
-            input?.let { append(it) }
-        }
-
-        put("input", fullInput)
-
-        temperature?.let { put("temperature", it) }
-        maxTokens?.let { put("max_tokens", it) }
-    }.toString()
-
-    return Request.Builder()
-        .url(url)
-        .addHeader("Authorization", "Bearer $apiKey")
-        .post(json.toRequestBody("application/json".toMediaType()))
-        .build()
-}
+private val logger = Logger.getInstance("AIRequest")
 
 data class ChatMessage(
     val role: String,
-    val content: String
+    val content: String,
+    val toolName: String? = null
+)
+
+data class ChatContext(
+    val model: String,
+    val system: String,
+    val messages: List<ChatMessage>,
+    val temperature: Double = 0.7,
+    val maxTokens: Int = 8000,
+    val metadata: Map<String, String> = emptyMap(),
+    val contextLen: Int = 8192,
+    val stream: Boolean = false,
 )
 
 class ChatRequestBuilder {
@@ -114,6 +35,8 @@ class ChatRequestBuilder {
     private var system: String? = null
 
     private val messages = mutableListOf<ChatMessage>()
+
+    private var stream: Boolean = false
 
     private var memoryEnabled: Boolean = false
     private var memoryLimit: Int = 5
@@ -141,6 +64,10 @@ class ChatRequestBuilder {
         messages += ChatMessage("user", text)
     }
 
+    fun stream(value: Boolean) = apply {
+        stream = value
+    }
+
     fun assistant(text: String) = apply {
         messages += ChatMessage("assistant", text)
     }
@@ -155,71 +82,186 @@ class ChatRequestBuilder {
         memoryLimit = limit
     }
 
-    fun temperature(value: Double) = apply { temperature = value }
+    fun temperature(value: Double) = apply {
+        temperature = value
+    }
 
-    fun maxTokens(value: Int) = apply { maxTokens = value }
+    fun maxTokens(value: Int) = apply {
+        maxTokens = value
+    }
 
     fun meta(key: String, value: String) = apply {
         metadata[key] = value
     }
 
-    // -----------------------
-    // BUILD → AIRequest
-    // -----------------------
+    fun build(task: TaskData? = null): ChatContext {
 
-    fun build(task: TaskData? = null): AIRequest {
-
-        val input = buildString {
-
-            system?.let {
-                append("System: $it\n\n")
-            }
-
-            // 🔥 memory injection
-            if (memoryEnabled && task != null) {
-                append(MemoryContextBuilder.build(task, memoryLimit))
-                append("\n\n")
-            }
-
-            messages.forEach { msg ->
-                append("${msg.role.uppercase()}: ${msg.content}\n")
-            }
-        }
-
-        return AIRequestBuilder()
-            .model(model)
-            .input(input)
-            .temperature(temperature ?: 0.7)
-            .maxTokens(maxTokens ?: 1000)
-            .apply {
-                metadata.forEach { (k, v) ->
-                    meta(k, v)
-                }
-            }
-            // tools → позже в JSON
-            .build()
+        return ChatContext(
+            model = model,
+            messages = messages,
+            temperature = temperature ?: 0.7,
+            maxTokens = maxTokens ?: 1000,
+            metadata = metadata,
+            system = "Ты агент, говорящий только на русском языке",
+            contextLen = 8192,
+            stream = stream,
+        )
     }
 }
 
-/*
-* val request = ChatRequestBuilder()
-    .system("You are an IntelliJ assistant")
+
+
+
+
+object LmStudioAdapter {
+
+    /*
+    model : string
+    input : string | array<object>
+                    Input text : string
+                    Input object : object
+                        Text Input (optional) : object
+                            type : "message"
+                            content : string
+                        Image Input (optional) : object
+                            type : "image"
+                            data_url : string
+    system_prompt (optional) : string
+    integrations (optional) : array<string | object>
+    stream (optional) : boolean
+    temperature (optional) : number
+    top_p (optional) : number
+    top_k (optional) : integer
+    min_p (optional) : number
+    repeat_penalty (optional) : number
+    max_output_tokens (optional) : integer
+    reasoning (optional) : "off" | "low" | "medium" | "high" | "on"
+    context_length (optional) : integer
+    store (optional) : boolean
+    previous_response_id (optional) : string
+    */
+
+
+    fun toRequest(ctx: ChatContext, url: String, apiKey: String): Request {
+
+        val json = buildJsonObject {
+
+            put("model", ctx.model)
+
+            ctx.system?.let {
+                put("system_prompt", it)
+            }
+
+            if (ctx.messages.size == 1) {
+                put("input", ctx.messages[0].content)
+            } else if (ctx.messages.size > 1) {
+                putJsonArray("input") {
+                    ctx.messages.forEach { msg ->
+                        add(
+                            buildJsonObject {
+                                put("type", "message")
+                                put("content", msg.content)
+                            }
+                        )
+                    }
+                }
+            }
+
+            put("temperature", ctx.temperature)
+            put("max_output_tokens", ctx.maxTokens)
+            put("context_length", ctx.contextLen)
+            put("stream", ctx.stream)
+        }
+        logger.warn("LmStudioAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        return json.toHttpRequest(url, apiKey)
+    }
+
+}
+
+object ResponsesAdapter {
+
+    fun toRequest(ctx: ChatContext, url: String, apiKey: String): Request {
+
+        val json = buildJsonObject {
+            put("model", ctx.model)
+
+            putJsonArray("input") {
+                ctx.messages.forEach {
+                    add(buildJsonObject {
+                        put("role", it.role)
+                        put("content", it.content)
+                    })
+                }
+            }
+            put("temperature", ctx.temperature)
+            put("max_tokens", ctx.maxTokens)
+        }
+        logger.warn("ResponsesAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        return json.toHttpRequest(url, apiKey)
+    }
+}
+
+
+object ChatCompletionsAdapter {
+
+    fun toRequest(ctx: ChatContext, url: String, apiKey: String): Request {
+
+        val json = buildJsonObject {
+            put("model", ctx.model)
+
+            putJsonArray("messages") {
+                ctx.messages.forEach {
+                    add(buildJsonObject {
+                        put("role", it.role)
+                        put("content", it.content)
+                    })
+                }
+            }
+
+            ctx.temperature.let { put("temperature", it) }
+            ctx.maxTokens.let { put("max_tokens", it) }
+        }
+        logger.warn("ChatCompletionsAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        return json.toHttpRequest(url, apiKey)
+    }
+}
+
+
+class BackendAdapter {
+
+    fun toRequest(ctx: ChatContext): Request {
+
+        val provider = DefaultChatConfigProvider(PluginSettings.instance)
+
+        val url = provider.buildChatUrl()
+        val apiKey = provider.buildApiKey()
+        val backend = provider.buildBackend()
+
+        return when (backend) {
+
+            AIBackendType.LmStudioLegacy ->
+                LmStudioAdapter.toRequest(ctx, url, apiKey)
+
+            AIBackendType.Responses ->
+                ResponsesAdapter.toRequest(ctx, url, apiKey)
+
+            AIBackendType.ChatCompletions ->
+                ChatCompletionsAdapter.toRequest(ctx, url, apiKey)
+        }
+    }
+}
+
+
+/* using
+
+val request = ChatRequestBuilder()
+    .system("You are IntelliJ assistant")
+    .memory(limit = 5)
     .user(task.content)
     .user("Context: ${task.job}")
     .model("gpt-5.4")
     .temperature(0.7)
     .meta("taskId", task.id)
-    .build()
-* */
-
-
-/*
-
-val request = ChatRequestBuilder()
-    .system("You are IntelliJ assistant")
-    .memory(limit = 5) // 🔥 вот оно
-    .user(task.content)
-    .model("gpt-5.4")
     .build(task)
 
 val updatedTask = processTask(task)
@@ -227,7 +269,6 @@ val updatedTask = processTask(task)
 MemorySystem.add(updatedTask)
 
 */
-
 
 
 // core

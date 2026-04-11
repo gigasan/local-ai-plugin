@@ -28,63 +28,7 @@ object LocalAIService {
     private val LOG = Logger.getInstance("LocalAIService")
 // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
-    /**
-     * Формирует URL в зависимости от chatEndpointIndex (оставляем логику как была).
-     */
-    fun buildChatUrl(settings: PluginSettings): String {
-        return when (settings.chatEndpointIndex) {
-            0 -> settings.baseUrl.trimEnd('/') + "/api/v1/chat"
-            1 -> settings.baseUrl.trimEnd('/') + "/v1/chat/completions"
-            2 -> settings.baseUrl.trimEnd('/') + "/v1/responses"
-            else -> settings.baseUrl.trimEnd('/') + settings.chatEndpoint.trim()
-        }
-    }
 
-    fun buildChatModel(settings: PluginSettings): String {
-        return settings.selectedModelKey.orEmpty()
-    }
-
-    /**
-     * Формирует тело запроса в зависимости от endpointIndex.
-     * Логика requestBody вынесена сюда, чтобы не дублировать в двух функциях.
-     */
-    private fun buildRequestBody(prompt: String, settings: PluginSettings): JsonObject {
-        val selectedModel = settings.selectedModelKey.ifBlank { "default" }
-
-        return JsonObject().apply {
-            when (settings.chatEndpointIndex) {
-                1 -> { // /v1/chat/completions (OpenAI-совместимый)
-                    addProperty("model", selectedModel)
-                    addProperty("stream", false)
-                    addProperty("max_tokens", 1000)
-                    addProperty("return_reasoning", false)
-                    addProperty("temperature", 0.0)
-                    val messages = JsonArray()
-                    messages.add(
-                        JsonObject().apply {
-                            addProperty("role", "user")
-                            addProperty("content", prompt)
-                        }
-                    )
-                    add("messages", messages)
-                }
-
-                2 -> { // /v1/responses
-                    addProperty("model", selectedModel)
-                    addProperty("input", prompt)
-
-                    val modalities = JsonArray()
-                    modalities.add("text")
-                    add("modalities", modalities)
-                }
-
-                else -> { // 0 или любой другой → старый /api/v1/chat (LM Studio)
-                    addProperty("model", selectedModel)
-                    addProperty("input", prompt)
-                }
-            }
-        }
-    }
 
     /**
      * 🔥 УНИВЕРСАЛЬНЫЙ ПАРСЕР — работает со всеми известными форматами:
@@ -170,7 +114,6 @@ object LocalAIService {
     // https://api.openai.com/v1/responses
     fun createRequest(url: String, model: String, prompt: String): Request {
 
-
         val json = """
                     {
                       "model": "$model",
@@ -196,13 +139,10 @@ object LocalAIService {
         if (prompt.isBlank()) return "❌ You cannot send an empty request."
 
         return try {
-            val settings = PluginSettings.instance
-            val chatFull = buildChatUrl(settings)
 
-            // Для отладки (как было в callLocalAI)
-            //println("Calling AI endpoint: $chatFull")
-
-            val requestBody = buildRequestBody(prompt, settings)
+            val provider = DefaultChatConfigProvider(PluginSettings.instance)
+            val chatFull = provider.buildChatUrl()
+            val requestBody = provider.buildRequestBody(prompt)
 
             val url = URI.create(chatFull).toURL()
             val conn = url.openConnection() as HttpURLConnection
@@ -251,19 +191,6 @@ object LocalAIService {
 
     fun callRenoteAI(prompt: String): String =
         callGenericAI(prompt, "Remote AI")
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     fun extractContent(json: String): String {
         val jsonObject = JsonParser.parseString(json).asJsonObject

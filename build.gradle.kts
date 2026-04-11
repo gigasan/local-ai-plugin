@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm") version "2.2.20"
     id("org.jetbrains.intellij.platform") version "2.13.1"
+    kotlin("plugin.serialization") version "1.9.0" // или твоя версия
 }
 
 repositories {
@@ -30,8 +31,8 @@ dependencies {
 
 intellijPlatform {
     pluginConfiguration {
-        name = "Local AI Plugin"
-        version = "0.2.0"
+        name = "Local AI Chat"
+        version = "0.3.0"
     }
 }
 

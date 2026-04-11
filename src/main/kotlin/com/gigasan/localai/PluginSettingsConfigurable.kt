@@ -8,6 +8,11 @@ import com.intellij.util.ui.AsyncProcessIcon
 import com.google.gson.JsonParser
 import com.intellij.util.ui.FormBuilder
 import com.jetbrains.rd.util.URI
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.net.HttpURLConnection
@@ -24,16 +29,25 @@ class PluginSettingsConfigurable : Configurable {
     private val contentPanel = JPanel(BorderLayout())
 
     private val baseUrl = JTextField()
+    private val apiKey = JTextField()
 
     private val modelComboBox = ComboBox<String>()
     private val modelsList = mutableListOf<Model>()
 
+    private val backends = listOf(
+        "LmStudioLegacy",
+        "Responses",
+        "ChatCompletions",
+    )
+    private var backendsComboBox = ComboBox(backends.toTypedArray())
+
     private val chatEndpoints = listOf(
         "/api/v1/chat",
-        "/v1/chat/completions",
         "/v1/responses",
+        "/v1/chat/completions",
         "Custom..."
     )
+
     private var chatEndpointsComboBox = ComboBox(chatEndpoints.toTypedArray())
     private val chatCustomEndpoint = JTextField()
 
@@ -43,7 +57,17 @@ class PluginSettingsConfigurable : Configurable {
         "Custom..."
     )
     private var modelListEndpointComboBox = ComboBox(modelListEndpoints.toTypedArray())
+
     private val modelListCustomEndpoint = JTextField()
+
+    private val modelListCustomPanel = JPanel(BorderLayout()).apply {
+        add(JBLabel("Model list custom endpoint:"), BorderLayout.WEST)
+        add(modelListCustomEndpoint, BorderLayout.CENTER)
+    }
+    private val chatCustomPanel = JPanel(BorderLayout()).apply {
+        add(JBLabel("Chat custom endpoint:"), BorderLayout.WEST)
+        add(chatCustomEndpoint, BorderLayout.CENTER)
+    }
 
     @Volatile
     private var isLoading = true
@@ -66,17 +90,40 @@ class PluginSettingsConfigurable : Configurable {
         loadingBox.add(Box.createVerticalGlue())
         loadingPanel.add(loadingBox, BorderLayout.CENTER)
 
-        chatEndpointsComboBox.selectedIndex = PluginSettings.instance.chatEndpointIndex
+
         modelListEndpointComboBox.selectedIndex = PluginSettings.instance.modelListEndpointIndex
+        modelListEndpointComboBox.addItemListener {
+            val isCustom = modelListEndpointComboBox.selectedItem == "Custom..."
+            modelListCustomPanel.isVisible = isCustom
+            modelListCustomPanel.revalidate()
+            modelListCustomPanel.repaint()
+        }
+        modelListCustomPanel.isVisible = modelListEndpointComboBox.selectedItem == "Custom..."
+
+        backendsComboBox.selectedIndex = PluginSettings.instance.backendIndex
+
+        chatEndpointsComboBox.selectedIndex = PluginSettings.instance.chatEndpointIndex
+        chatEndpointsComboBox.addItemListener {
+            val isCustom = chatEndpointsComboBox.selectedItem == "Custom..."
+            chatCustomPanel.isVisible = isCustom
+            chatCustomPanel.revalidate()
+            chatCustomPanel.repaint()
+        }
+        chatCustomPanel.isVisible = chatEndpointsComboBox.selectedItem == "Custom..."
 
         // Настройка контента
         val formPanel = FormBuilder.createFormBuilder()
             .addLabeledComponent("Base URL:", baseUrl)
+            .addLabeledComponent("API Key:", apiKey)
+            .addSeparator()
             .addLabeledComponent("Model list endpoint:", modelListEndpointComboBox)
-            .addLabeledComponent("Model list custom endpoint:", modelListCustomEndpoint)
+            .addComponent(modelListCustomPanel)
             .addLabeledComponent("Model:", modelComboBox)
+            .addSeparator()
             .addLabeledComponent("Chat endpoint:", chatEndpointsComboBox)
-            .addLabeledComponent("Chat custom endpoint:", chatCustomEndpoint)
+            .addComponent(chatCustomPanel)
+            .addSeparator()
+            .addLabeledComponent("Backend:", backendsComboBox)
             .panel
 
         val topWrapper = JPanel(BorderLayout())
@@ -129,6 +176,102 @@ class PluginSettingsConfigurable : Configurable {
         }
     }
 
+
+    fun parseLmStudio(json: JsonObject): List<Model> {
+
+        val list = (json["models"] ?: json["data"])
+            ?.jsonArray
+            ?.mapNotNull { it as? JsonObject }
+
+        return list?.map { obj ->
+
+            println("key")
+            val key = obj["key"]?.jsonPrimitive?.content
+                ?: obj["id"]?.jsonPrimitive?.content
+                ?: "unknown"
+
+            println("selectedVariant")
+            val selectedVariant = obj["selected_variant"]?.jsonPrimitive?.content
+
+            println("quantName = ${obj["quantization"]}")
+            val quantName = (obj["quantization"] as? JsonObject)
+                ?.get("name")
+                ?.jsonPrimitive
+                ?.content
+                ?.lowercase()
+
+            println("normalizedId")
+            val normalizedId = when {
+                selectedVariant != null -> selectedVariant
+                key.contains("@") -> key
+                quantName != null -> "$key@$quantName"
+                else -> key
+            }
+            println("Model")
+            Model(
+                key = normalizedId,
+                displayName = buildString {
+                    append(obj["display_name"]?.jsonPrimitive?.content ?: key)
+                    println("last")
+                    if (!normalizedId.contains("@") && quantName != null) {
+                        append(" @${quantName.uppercase()}")
+                    }
+                }
+            )
+        } ?: emptyList()
+    }
+
+    fun parseOpenAI(json: JsonObject): List<Model> {
+
+        val array = (json["models"] ?: json["data"])
+            ?.jsonArray
+            ?.map { it.jsonObject }
+
+        return array?.map { el ->
+            val obj = el.jsonObject
+
+            val key = obj["key"]?.jsonPrimitive?.content
+                ?: obj["id"]?.jsonPrimitive?.content
+                ?: "unknown"
+
+            val selectedVariant = obj["selected_variant"]?.jsonPrimitive?.content
+
+            val quantName = obj["quantization"]
+                ?.jsonObject
+                ?.get("name")
+                ?.jsonPrimitive
+                ?.content
+                ?.lowercase()
+
+            val normalizedId = when {
+                selectedVariant != null -> selectedVariant
+                key.contains("@") -> key
+                quantName != null -> "$key@$quantName"
+                else -> key
+            }
+
+            Model(
+                key = normalizedId,
+                displayName = buildString {
+                    append(obj["display_name"]?.jsonPrimitive?.content ?: key)
+
+                    if (!normalizedId.contains("@") && quantName != null) {
+                        append(" @${quantName.uppercase()}")
+                    }
+                }
+            )
+        } ?: emptyList()
+
+    }
+
+    fun parseModels(json: JsonObject): List<Model> {
+        return when {
+            json.containsKey("models") -> parseLmStudio(json)
+            json.containsKey("data") -> parseOpenAI(json)
+            else -> emptyList()
+        }
+    }
+
     private fun fetchModels(): List<Model> {
         val settings = PluginSettings.instance
         val modelListFull: String = when (settings.modelListEndpointIndex) {
@@ -145,50 +288,8 @@ class PluginSettingsConfigurable : Configurable {
         return try {
             connection.inputStream.bufferedReader().use { reader ->
                 val response = reader.readText()
-                val json = JsonParser.parseString(response).asJsonObject
-
-                // ВАЖНО: Проверьте структуру JSON. В некоторых версиях API поле называется "data"
-                val modelsArray = json.getAsJsonArray("models") ?: json.getAsJsonArray("data")
-
-                modelsArray?.map {
-                    val obj = it.asJsonObject
-
-                    val key = obj.get("key")?.asString
-                        ?: obj.get("id")?.asString
-                        ?: "unknown"
-
-                    val selectedVariant = obj.get("selected_variant")?.asString
-
-                    val quantName = obj.getAsJsonObject("quantization")
-                        ?.get("name")
-                        ?.asString
-                        ?.lowercase()
-
-                    val normalizedId = when {
-                        // 1. лучший вариант — уже готовый
-                        selectedVariant != null -> selectedVariant
-
-                        // 2. уже содержит квантизацию
-                        key.contains("@") -> key
-
-                        // 3. собираем вручную
-                        quantName != null -> "$key@$quantName"
-
-                        else -> key
-                    }
-
-                    Model(
-                        key = normalizedId,
-                        displayName = buildString {
-                            append(obj.get("display_name")?.asString ?: key)
-
-                            // добавляем квантизацию в имя, если её там нет
-                            if (!contains("@") && quantName != null) {
-                                append(" @${quantName.uppercase()}")
-                            }
-                        }
-                    )
-                } ?: emptyList()
+                val json = Json.parseToJsonElement(response).jsonObject
+                parseModels(json)
             }
         } catch (e: Exception) {
             println("Error fetching models: ${e.message}")
@@ -202,7 +303,9 @@ class PluginSettingsConfigurable : Configurable {
         val settings = PluginSettings.instance
 
         // 1. Проверяем текстовые поля всегда
+        if (settings.apiKey != apiKey.text.trim()) return true
         if (settings.baseUrl != baseUrl.text.trim()) return true
+        if (settings.backendIndex != backendsComboBox.selectedIndex) return true
         if (settings.chatEndpointIndex != chatEndpointsComboBox.selectedIndex) return true
         if (settings.chatEndpoint != chatCustomEndpoint.text.trim()) return true
         if (settings.modelListEndpointIndex != modelListEndpointComboBox.selectedIndex) return true
@@ -222,7 +325,9 @@ class PluginSettingsConfigurable : Configurable {
         val settings = PluginSettings.instance
 
         // Сохраняем текстовые поля всегда
+        settings.apiKey = apiKey.text.trim()
         settings.baseUrl = baseUrl.text.trim()
+        settings.backendIndex = backendsComboBox.selectedIndex
         settings.chatEndpointIndex = chatEndpointsComboBox.selectedIndex
         settings.chatEndpoint = chatCustomEndpoint.text.trim()
         settings.modelListEndpointIndex = modelListEndpointComboBox.selectedIndex
@@ -241,11 +346,10 @@ class PluginSettingsConfigurable : Configurable {
 
     override fun reset() {
         val settings = PluginSettings.instance
-
+        apiKey.text = settings.apiKey
         modelListCustomEndpoint.text = settings.modelListEndpoint.ifBlank { "/v1/models" }
-        chatCustomEndpoint.text = settings.chatEndpoint.ifBlank { "/v1/chat/completions" }
+        chatCustomEndpoint.text = settings.chatEndpoint.ifBlank { "/v1/responses" }
         baseUrl.text = settings.baseUrl.ifBlank { "http://127.0.0.1:11434" }
-
 
         if (modelsList.isNotEmpty()) {
             val index = modelsList.indexOfFirst {
