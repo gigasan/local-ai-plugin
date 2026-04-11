@@ -20,7 +20,7 @@ class MyAction : AnAction() {
         val selection = editor.selectionModel.selectedText ?: return
 
         val project = e.project ?: return
-        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Chat")
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Local AI Chat")
         toolWindow?.show()
 
         //ChatPanel.instance?.addUserMessage(selection)

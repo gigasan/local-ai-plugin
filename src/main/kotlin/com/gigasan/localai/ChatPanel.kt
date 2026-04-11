@@ -1,7 +1,5 @@
 package com.gigasan.localai
 
-import com.gigasan.localai.LocalAIService.buildChatModel
-import com.gigasan.localai.LocalAIService.buildChatUrl
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -10,7 +8,6 @@ import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
-import com.intellij.testFramework.LightVirtualFile
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
@@ -19,8 +16,6 @@ import okhttp3.OkHttpClient
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefLoadHandlerAdapter
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
@@ -35,47 +30,61 @@ import kotlin.system.exitProcess
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
+import com.intellij.ui.JBColor
 import com.vladsch.flexmark.html.HtmlRenderer
 import com.vladsch.flexmark.html.AttributeProvider
 import com.vladsch.flexmark.html.AttributeProviderFactory
 import com.vladsch.flexmark.ast.FencedCodeBlock
 import com.vladsch.flexmark.html.renderer.AttributablePart
 import com.vladsch.flexmark.html.renderer.LinkResolverContext
+import com.vladsch.flexmark.parser.Parser
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import kotlin.text.format
-import java.util.regex.Matcher
-import java.util.regex.Pattern
 
+
+//sealed class ChatBlock {
+//    data class Text(val value: String): ChatBlock()
+//    data class Reasoning(val value: String): ChatBlock()
+//    data class Tool(val name: String, val output: String): ChatBlock()
+//}
 
 // Блок Markdown
-data class ChatBlock(
-    val id: String,
-    var content: String,
-    var description: String,
-)
+//data class ChatBlock(
+//    val id: String,
+//    var content: String,
+//    var reasoning: String,
+//    var description: String,
+//)
 
 class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true), Disposable {
-    private var updateTimer: javax.swing.Timer? = null
+    private var updateTimer: Timer? = null
     private var jbCefBrowser = JBCefBrowser()   // или через builder, если нужно
     // 2. Создаём jsQuery ТОЛЬКО после того, как браузер полностью создан
-    private lateinit var jsQuery: JBCefJSQuery   // используем lateinit
+    private lateinit var jsQuery: JBCefJSQuery   // используем late init
     // ← сюда добавь свой wrapper
-
     private val browserWrapper = JPanel(BorderLayout()).apply {
         // Важно: делаем так, чтобы браузер растягивался по всему доступному месту
         preferredSize = Dimension(600, 800)   // начальный разумный размер
         minimumSize = Dimension(300, 400)
-        add(jbCefBrowser.component, BorderLayout.CENTER)
+        //add(jbCefBrowser.component, BorderLayout.CENTER)
         // Опционально: можно добавить тонкую рамку для отладки
         border = BorderFactory.createLineBorder(Color.GRAY)
     }
 
-    private var markdownPanel = JPanel()
-    private val markdownFile = LightVirtualFile("chat.md", "")   // dummy-файл для панели
-    private val chatBlocks = mutableListOf<ChatBlock>()
+//    private var animationStep = 0
+    private val statusBarWidth = 30 // Желаемая ширина строки в символах
+    private var lastUpdateMs = 0L
+    private var marqueeOffset = 0L
+    private var lastTextLength = 0
+    private var lastAnimationMs = 0L
+
+
+    //private val chatBlocks = mutableListOf<ChatBlock>()
     private val inputField = JTextField()
     private val sendButton = JButton("Send")
     private val taskManagerPanel = TaskManagerPanel()
-    private val LOG = Logger.getInstance("ChatPanel")
+    private val logger = Logger.getInstance("ChatPanel")
 
     companion object {
         var instance: ChatPanel? = null
@@ -89,7 +98,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         // Верхняя часть — браузер (чат)
         val chatPanel = JPanel(BorderLayout())
-        chatPanel.add(browserWrapper, BorderLayout.CENTER)   // ← вот сюда wrapper
+        chatPanel.add(browserWrapper, BorderLayout.CENTER)
 
         // Нижняя часть — задачи + поле ввода
         val southPanel = JPanel().apply {
@@ -116,6 +125,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
         }
         southPanel.add(inputPanel)
+        installDropHandler(southPanel)
 
         // Собираем всё вместе
         mainPanel.add(chatPanel, BorderLayout.CENTER)
@@ -125,7 +135,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         // === Инициализация JCEF ===
         if (!JBCefApp.isSupported()) {
-            LOG.error("JBCefApp is not supported!")
+            logger.error("JBCefApp is not supported!")
             exitProcess(0)
         }
 
@@ -168,11 +178,12 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         // Подписка на смену темы
         ApplicationManager.getApplication().messageBus.connect(this)
             .subscribe(LafManagerListener.TOPIC, LafManagerListener {
-                SwingUtilities.invokeLater { recreateMarkdownPanel() }
+                SwingUtilities.invokeLater { rebuildChatBlocksFromTasks() }
             })
 
-        LOG.info("ChatPanel initialized")
+        logger.info("ChatPanel initialized")
     }
+
     // --- Drag-and-Drop ---
     private fun installDropHandler(panel: JPanel) {
 
@@ -202,12 +213,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                         val task = TaskData(
                             id = System.currentTimeMillis().toString(),
                             title = "📂",
-                            description = files.joinToString(" ") { it.name },
+                            //description = files.joinToString(" ") { it.name },
                             content = files.joinToString("\n") { it.absolutePath },
                             zoneType = "File",
-                            job = "check errors",
+                            request = "check errors",
                             answer = "",
-                            status = "created",
+                            status = TaskStatus.ERROR,
+                            reasoning = "",
+                            hint = "",
                         )
                         taskManagerPanel.addTask(task)
                         event.dropComplete(true)
@@ -223,12 +236,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                             TaskData(
                                 id = System.currentTimeMillis().toString(),
                                 title = "📝",
-                                description = "$fileName ${lines.first}-${lines.last}",
+                                //description = "$fileName ${lines.first}-${lines.last}",
                                 content = text,
                                 zoneType = "Editor",
-                                job = "check errors",
+                                request = "check errors",
                                 answer = "",
-                                status = "created",
+                                status = TaskStatus.CREATED,
+                                reasoning = "",
+                                hint = "",
                             )
                         } else {
                             // any other data
@@ -242,12 +257,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                             TaskData(
                                 id = System.currentTimeMillis().toString(),
                                 title = "📄",
-                                description = preview,
+                                //description = preview,
                                 content = droppedText,
                                 zoneType = "External",
-                                job = "check errors",
+                                request = "check errors",
                                 answer = "",
-                                status = "created",
+                                status = TaskStatus.CREATED,
+                                reasoning = "",
+                                hint = "",
                             )
                         }
                         taskManagerPanel.addTask(task)
@@ -256,7 +273,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                         event.rejectDrop()
                     }
                 } catch (e: Exception) {
-                    LOG.error(e)
+                    logger.error(e)
                     event.rejectDrop()
                 }
             }
@@ -267,161 +284,121 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
     fun scheduleMarkdownUpdate() {
         updateTimer?.stop()
-        updateTimer = javax.swing.Timer(300) {
-            rebuildMarkdownFromTasks()
+        updateTimer = Timer(300) {
+            rebuildChatBlocksFromTasks()
         }
         updateTimer?.isRepeats = false
         updateTimer?.start()
     }
 
-    fun wrapBubble(str: String): String {
-        // <pre><code class="language-kotlin">
-        // into
-        // <div class="code-block">
-        //  <div class="code-header">
-        //    <span>kotlin</span>
-        //    <button onclick="toggleCode(this)">collapse</button>
-        //    <button onclick="copyCode(this)">copy</button>
-        //  </div>
-        //  <pre><code>...</code></pre>
-        //</div>
-        return "$str"
-    }
-
-    fun getFormatedTime(id: String): String {
-        val formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-        val instant = java.time.Instant.ofEpochMilli(id.toLong())
-        val dateTime = java.time.ZonedDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
-        return dateTime.format(formatter)
-    }
-
-
-
-//    fun extractLanguageName(text: String): String? {
-//        val languagePattern = Pattern.compile("language\\s*(\\w+)")
-//        val matcher = languagePattern.matcher(text)
-//
-//        //return matcher.findMatch()?.group(1)
-//    }
-
-    fun wrapCodeBlock(htmlCode: String): String {
-        // Извлекаем язык из класса (например, language-python)
-        val languageRegex = """language-(\w+)""".toRegex()
-        val matchResult = languageRegex.find(htmlCode)
-        val language = matchResult?.groupValues?.get(1) ?: "text"
-
-        // Извлекаем содержимое внутри <code>...</code>
-        val codeContentRegex = """<code[^>]*>(.*?)</code>""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        val codeMatch = codeContentRegex.find(htmlCode)
-
-        val rawCode = codeMatch?.groupValues?.get(1)?.trim() ?: ""
-
-        // Экранируем HTML-символы в коде (чтобы &quot; и т.д. превратились обратно в " и т.п.)
-        val decodedCode = rawCode
-            .replace("&quot;", "\"")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&apos;", "'")
-
-        // Формируем итоговый HTML по нужному шаблону
-        return """
-        <div class="code-block">
-            <div class="code-header">
-                <span>$language</span>
-                <button onclick="toggleCode(this)">collapse</button>
-                <button onclick="copyCode(this)">copy</button>
-            </div>
-            
-            <pre><code class="language-$language">$decodedCode</code></pre>
-        </div>
-    """.trimIndent()
-    }
-
-
-    fun transformCodeBlocks(html: String): String {
-        // Регулярное выражение находит блоки точно в формате, который вы указали.
-        // Поддерживает пробелы/переносы строк между тегами <pre> и <code>,
-        // но сохраняет ВЕСЬ внутренний код (включая отступы и переносы) без изменений.
-        val regex = Regex("""<pre class="language-(\w+)"\s*>\s*<code class="language-\1"\s*>([\s\S]*?)</code>\s*</pre>""")
-
-        return regex.replace(html) { matchResult ->
-            val language = matchResult.groupValues[1]   // например, "python"
-            val codeContent = matchResult.groupValues[2] // весь код внутри <code>...</code>
-
-            """
-<div class="code-block">
- <div class="code-header">
- <span>$language</span>
- <button onclick="toggleCode(this)">collapse</button>
- <button onclick="copyCode(this)">copy</button>
- </div>
-
- <pre><code class="language-$language">$codeContent</code></pre>
-</div>
-""".trimIndent()
-        }
-    }
-
-    // Пример использования (полная программа):
-// Читает весь HTML из stdin и выводит преобразованный результат в stdout.
-// Можно запустить как обычный Kotlin-файл.
-    fun main() {
-        val html = System.`in`.bufferedReader().use { it.readText() }
-        val result = transformCodeBlocks(html)
-        println(result)
-    }
-
-
-    fun rebuildMarkdownFromTasks() {
-        chatBlocks.clear()
+    // TaskData -> ChatBlock
+    fun rebuildChatBlocksFromTasks() {
         val tasks = taskManagerPanel.getAllTasks()
-        tasks.forEach { task ->
-            //LOG.info("task-id: ${task.id}")
-            val htmlText = buildString {
-                append("<details data-task-id='${task.id}' style='margin-bottom:8px;'>")
-                append("<summary data-task-id='${task.id}' style='cursor:pointer;'>${task.title} ${task.description}</summary>\n")
-                append(MarkdownRenderer.toHtml(task.content))
-                append(MarkdownRenderer.toHtml(task.answer))
-                append(MarkdownRenderer.toHtml(task.job))
-                append("<p>${getFormatedTime(task.id)}</p>")
-                append("</details>\n")
-            }  //.replace("<pre><code class=\"language-", "<div class='code-block'>...")
-            //val bubledText =
-            //val html = """<div class="code-block"><div class="code-header"><span>$lang</span>
-            //<button onclick="toggleCode(this)">collapse</button><button onclick="copyCode(this)">copy</button>
-            //</div><pre><code class="language-$lang">${node.contentChars}</code></pre></div>""".trimIndent()
-            //attributes.addValue("data-html", html)
-            val bubbledHtmlText = transformCodeBlocks(htmlText)
-
-            LOG.warn("htmlText: $htmlText")
-            LOG.warn("bubbledHtmlText: $bubbledHtmlText")
-            val chatBlock = ChatBlock(
-                id = task.id,
-                content = bubbledHtmlText,
-                description = task.description,
-            )
-
-            chatBlocks.add(chatBlock)
-        }
-        refreshChatPanel()
+        renderChatBlocks(tasks)
     }
+
+    fun buildTaskHtml(task: TaskData): String {
+
+        val description = AIMetrics.buildDescription(
+            request = task.request,
+            content = task.content,
+            status = task.status,
+        )
+
+        var data_task_id = "data-task-id='${task.id}'"
+
+        val htmlText = buildString {
+            append("<details>")
+            append("<summary ${data_task_id}>${task.title} ${description}</summary>\n")
+
+            append("<div class='chat'>")
+                if (task.request.isNotBlank()) {
+                    append("<div class='bubble-user'>")
+                    append(MarkdownRenderer.toHtml(task.request))
+                    append("</div>")
+                }
+
+                if (task.content.isNotBlank()) {
+                    append("<div class='bubble-user'>")
+                    append(MarkdownRenderer.toHtml(task.content))
+                    append("</div>")
+                }
+
+                if (task.answer.isNotBlank() || task.reasoning.isNotBlank()) {
+                    append("<div class='bubble-assistant'>")
+
+                    if (task.reasoning.isNotBlank()) {
+                        append("<p>")
+                        append(HtmlProcessor.insertReasoning(task.reasoning.trim()))
+                        append("</p>")
+                    }
+
+                    if (task.answer.isNotBlank()) {
+                        append(MarkdownRenderer.toHtml(task.answer))
+                    }
+                    append("</div>")
+                }
+            append("</div>")
+
+            if (task.id.isNotBlank()) {
+                append("<div class='footer'>")
+                append(HtmlProcessor.getFormatedTime(task.id))
+                append("\n\n${task.hint}")
+                append("</div>")
+            }
+            append("</details>\n")
+        }
+
+        val bubbledHtmlText = HtmlProcessor.transformCodeBlocks(htmlText)
+        return bubbledHtmlText
+    }
+
 
     fun sendTask(task: TaskData) {
 
-        val settings = PluginSettings.instance
-        val url = buildChatUrl(settings)
-        val model = buildChatModel(settings)
+        val provider = DefaultChatConfigProvider(PluginSettings.instance)
+        val url = provider.buildChatUrl()
+        val model = provider.buildChatModel()
 
-        val clientOk = OkHttpClient()
-        val requestOk = com.gigasan.localai.LocalAIService.createRequest(url, model, "Write a short bedtime story about a unicorn.")
+        val clientOk = HttpClientProvider.client
+        val requestOk = LocalAIService.createRequest(url, model, "Write a short bedtime story about a unicorn.")
         val responseOk = clientOk.newCall(requestOk).execute()
         println(responseOk.body?.string())
 
     }
 
-    object HttpClientProvider {
-        val client = okhttp3.OkHttpClient()
+    /**
+     * Создает эффект бегущей строки
+     */
+    private fun createSmartMarquee(text: String, width: Int): String {
+        if (text.isEmpty()) return " ".repeat(width)
+
+        // 1. Сброс, если контекст полностью сменился (текст стал короче)
+        if (text.length < lastTextLength) {
+            marqueeOffset = 0
+        }
+        lastTextLength = text.length
+
+        // 2. Если всё влезает — не крутим
+        if (text.length <= width) {
+            return text.padEnd(width)
+        }
+
+        // 3. Формируем кольцо (текст + разделитель)
+        val longText = "$text          "
+        val len = longText.length
+
+        val builder = StringBuilder()
+        for (i in 0 until width) {
+            // Используем наш сохраненный offset вместо времени
+            val charIndex = ((marqueeOffset + i) % len).toInt()
+            builder.append(longText[charIndex])
+        }
+
+        // 4. Двигаем окно для следующего кадра
+        marqueeOffset = (marqueeOffset + 1) % len
+
+        return builder.toString()
     }
 
     sealed class TaskResult {
@@ -429,43 +406,81 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         data class Error(val task: TaskData, val error: Throwable) : TaskResult()
     }
 
-    fun processTask(task: TaskData): TaskResult {
-        return try {
-            val settings = PluginSettings.instance
-            val url = buildChatUrl(settings)
-            val model = buildChatModel(settings)
+    fun onStreamEvent(event: StreamEvent, indicator: ProgressIndicator) {
+        val now = System.currentTimeMillis()
 
-            val aiRequest = ChatRequestBuilder()
+        // Двигаем анимацию не чаще, чем раз в 150-200 мс,
+        // чтобы скорость была комфортной
+        if (now - lastAnimationMs > 180) {
+            val baseMsg = event.indicatorText.replace("\n", " ")
+            indicator.text = createSmartMarquee(baseMsg, 25)
+            lastAnimationMs = now
+        }
+
+        indicator.checkCanceled()
+    }
+
+    fun processTask(task: TaskData, indicator: ProgressIndicator): TaskResult {
+        return try {
+            val provider = DefaultChatConfigProvider(PluginSettings.instance)
+            val model = provider.buildChatModel()
+            val url = provider.buildChatUrl()
+            val backend = provider.buildBackend()
+            val apiKey = "sk-lm-zESagiFt:J3TSJCffvecSKvcx4Fym"
+            logger.info("task = $task")
+            logger.info("model = $model")
+            val request = "${task.request} ${task.content}".trimIndent()
+            val chatContext = ChatRequestBuilder()
                 .system("You are IntelliJ assistant")
                 .memory(limit = 5)
-                .user("${task.job} ${task.content}")
+                .user(request)
+                .stream(true)
                 .model(model)
+                .maxTokens(8000)
                 .build(task)
-
-            val apiKey = "sk-lm-zESagiFt:J3TSJCffvecSKvcx4Fym"
-            val httpRequest = aiRequest.toHttpRequest(url, apiKey)
+            logger.warn("chatContext = $chatContext")
+            val stateManager = StateManager()
+            val stateMachine = StateMachine()
+            val adapter = BackendAdapter()
+            val http = HttpClientProvider.client
+            val aiClientStream = AIClientStream(
+                adapter = adapter,
+                http = http,
+                stateManager = stateManager,
+                stateMachine = stateMachine
+            )
+            //val toolClient = ToolOrchestrator(AIClientPost()) // url, api and backend from PluginSettings
             val startTime = System.currentTimeMillis()
-            val response = HttpClientProvider.client.newCall(httpRequest).execute()
-            val endTime = System.currentTimeMillis()
-            val raw = response.body?.string() ?: ""
-            val result = AIResponseParser.parse(raw).copy(durationMs = endTime - startTime)
-            if (result.toolCalls.isNotEmpty()) {
-                result.toolCalls.forEach { tool ->
-                    val output = ToolRegistry.execute(tool.name, tool.arguments)
-                    println("Tool result: $output")
-                }
+            val aiResult = aiClientStream.execute(chatContext, indicator) { event ->
+                onStreamEvent(event, indicator)
             }
+
+            //val toolResult = toolClient.run(chatContext)
+            //logger.warn("toolResult = $toolResult")
+            val endTime = System.currentTimeMillis()
+            val result = aiResult.copy(durationMs = endTime - startTime)
+
             val updated = task.copy(
                 answer = result.text,
-                description = "Ответ за ${formatDuration(result.durationMs)}",
-                status = "done"
+                hint = AIMetrics.buildHint(
+                    usage = result.usage,
+                    durationMs = result.durationMs
+                ),
+//                description = AIMetrics.buildDescription(
+//                    request = task.request,
+//                    content = task.content,
+//                    status = task.status,
+//                ),
+                reasoning = result.reasoning?.trim() ?:"",
+                status = TaskStatus.DONE,
             )
+
             TaskResult.Success(updated)
         } catch (e: Exception) {
             TaskResult.Error(
                 task.copy(
-                    status = "error",
-                    description = "Ошибка: ${e.message}"
+                    status = TaskStatus.ERROR,
+                    //description = "❌Ошибка:** ${e.message}"
                 ),
                 e)
         }
@@ -476,84 +491,73 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         task: TaskData,
         onUpdate: (TaskData) -> Unit
     ) {
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "AI Processing", false) {
+        // Включаем canBeCancelled = true (третий параметр)
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "AI Processing", true) {
 
             override fun run(indicator: ProgressIndicator) {
-                indicator.text = "Отправка запроса..."
+                indicator.text = "Подготовка запроса..."
                 indicator.isIndeterminate = true
 
-                when (val result = processTask(task)) {
+                // Передаем индикатор в процесс, чтобы внутри цикла чтения
+                // делать индикатор.checkCanceled()
+                when (val result = processTask(task, indicator)) {
                     is TaskResult.Success -> {
                         MemorySystem.add(result.task)
-                        updateTaskOnUI(result.task)
+                        onUpdate(result.task)
                     }
                     is TaskResult.Error -> {
-                        LOG.warn("Task failed", result.error)
-                        updateTaskOnUI(result.task)
+                        logger.warn("Task failed", result.error)
+                        onUpdate(result.task)
                     }
                 }
+            }
 
+            override fun onCancel() {
+                // Опционально: логируем отмену пользователем
+                logger.info("Task cancelled by user")
             }
 
             override fun onThrowable(error: Throwable) {
+                // Если сокет закрыт, это упадет сюда
                 ApplicationManager.getApplication().invokeLater {
-                    onUpdate(
-                        task.copy(
-                            description = "Ошибка: ${error.message}",
-                            status = "error"
-                        )
-                    )
+                    onUpdate(task.copy(status = TaskStatus.ERROR))
                 }
             }
         })
     }
 
-
-    private fun sendMessageOk() {
-        val mainText = inputField.text.trim()
-        if (mainText.isEmpty()) return
-
+    private fun buildTaskFromString(text: String): TaskData {
         val task = TaskData(
             id = System.currentTimeMillis().toString(),
             title = "✏️",
-            description = "chat message",
-            content = mainText,
+            //description = "chat message",
+            content = text,
             zoneType = "Chat",
-            job = "",
+            request = "",
             answer = "",
-            status = "created"
+            status = TaskStatus.CREATED,
+            reasoning = "",
+            hint = "",
         )
-
-        taskManagerPanel.addTask(task)
-        inputField.text = ""
-
-        updateTaskStatus(task, "sending")
-
-        runTaskInBackground(project, task) { updatedTask ->
-            updateTaskOnUI(updatedTask)
-        }
+        return task
     }
 
     private fun sendMessage() {
         val mainText = inputField.text.trim()
         if (mainText.isEmpty()) return
-
-        // Создаём новую задачу
-        val task = TaskData(
-            id = System.currentTimeMillis().toString(),
-            title = "✏️",
-            description = "chat message",
-            content = mainText,
-            zoneType = "Chat",
-            job = "",
-            answer = "",
-            status = "created"
-        )
-        taskManagerPanel.addTask(task)
+        val task = buildTaskFromString(mainText)
         inputField.text = ""
 
-        // Обновляем статус на "sending"
-        updateTaskStatus(task, "sending")
+        taskManagerPanel.addTask(task)
+
+        updateTaskStatus(task, TaskStatus.SENDING)
+
+        runTaskInBackground(project, task) { updatedTask ->
+            updateTaskOnUI(updatedTask)
+        }
+
+/*
+        // del below
 
         // Подготовка запроса к AI
         val request = "${task.job} ${task.content}"
@@ -578,6 +582,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 updateTaskOnUI(task)
             }
         }.start()
+*/
     }
 
     // Обновление задачи в taskList и вызов onTasksChanged
@@ -596,20 +601,11 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     }
 
     // Обновление статуса задачи
-    private fun updateTaskStatus(task: TaskData, status: String) {
-        task.status = status
+    private fun updateTaskStatus(task: TaskData, newStatus: TaskStatus) {
+        task.status = newStatus
         updateTaskOnUI(task)
     }
 
-    // Форматирование времени в hh:mm:ss:ms
-    private fun formatDuration(durationMs: Long?): String {
-        val totalSeconds = durationMs?.div(1000)
-        val hours = totalSeconds?.div(3600)
-        val minutes = (totalSeconds?.rem(3600))?.div(60)
-        val seconds = totalSeconds?.rem(60)
-        val milliseconds = durationMs?.rem(1000)
-        return String.format("%02d:%02d:%02d:%03d", hours, minutes, seconds, milliseconds)
-    }
 
     fun sendExternalMessage(text: String) {
 //        chatMarkdown += "**Вы:** $text\n\n"
@@ -634,46 +630,9 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     fun Color.toHex() = "#%02x%02x%02x".format(red, green, blue)
 
 
-    private fun cleanMarkdownHtml(rawHtml: String): String {
-        var html = rawHtml
-
-        // === Очистка через Jsoup — очень эффективно ===
-        val doc: Document = Jsoup.parseBodyFragment(html)
-
-        // Удаляем всё, что связано с IntelliJ highlighter и copy buttons
-        doc.select("div.code-fence-highlighter-copy-button, .code-fence-highlighter-copy-button-icon, .tooltiptext").remove()
-        doc.select("pre").forEach { pre ->
-            pre.select("div").remove()           // удаляем обёртки внутри pre
-        }
-
-        // Удаляем все md-src-pos и data-* атрибуты
-        doc.select("*").forEach { element ->
-            element.removeAttr("md-src-pos")
-            element.removeAttr("data-src-pos")
-            element.removeAttr("data-fence-content")
-            if (element.attr("style").isBlank()) {
-                element.removeAttr("style")
-            }
-        }
-
-        // Делаем чистый HTML (без лишних обёрток)
-        html = doc.body().html()
-        return html
-    }
-
-    // Простая функция определения языка для class
-    private fun detectLanguage(code: String): String {
-        return when {
-            code.contains("fn main") || code.contains("println!") -> "rust"
-            code.contains("fun ") || code.contains("override fun") -> "kotlin"
-            code.contains("public class") || code.contains("System.out") -> "java"
-            else -> "plaintext"
-        }
-    }
-
     object MarkdownRenderer {
 
-        private val parser = com.vladsch.flexmark.parser.Parser.builder().build()
+        private val parser = Parser.builder().build()
 
         private val renderer = HtmlRenderer.builder()
             .escapeHtml(false)
@@ -715,15 +674,82 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
     }
 
-    private fun refreshChatPanel() {
-        LOG.info("Rendering ${chatBlocks.size} blocks")
-        val htmlBody = chatBlocks.joinToString("\n\n") { it.content }
-        LOG.info("htmlDetails=$htmlBody")
+    /*
+
+    if (!result.reasoning.isNullOrBlank()) {
+    append(
+        """
+        <details style="margin-top:8px;">
+            <summary>🧠 Размышления</summary>
+            <pre>${result.reasoning}</pre>
+        </details>
+        """.trimIndent()
+    )
+}
+
+     */
+
+    fun Color.darker(factor: Float = 0.9f): Color {
+        return Color(
+            (red * factor).toInt().coerceIn(0, 255),
+            (green * factor).toInt().coerceIn(0, 255),
+            (blue * factor).toInt().coerceIn(0, 255),
+            alpha
+        )
+    }
+
+    fun Color.lighter(factor: Float = 0.1f): Color {
+        return Color(
+            (red + (255 - red) * factor).toInt().coerceIn(0, 255),
+            (green + (255 - green) * factor).toInt().coerceIn(0, 255),
+            (blue + (255 - blue) * factor).toInt().coerceIn(0, 255),
+            alpha
+        )
+    }
+
+    fun Color.adjustBrightness(factor: Float): Color {
+        val hsb = FloatArray(3)
+        Color.RGBtoHSB(red, green, blue, hsb)
+
+        hsb[2] = (hsb[2] * factor).coerceIn(0f, 1f)
+
+        return Color.getHSBColor(hsb[0], hsb[1], hsb[2])
+    }
+
+    fun isDarkTheme(): Boolean {
+        val lookAndFeel = UIManager.getLookAndFeel().name.lowercase();
+        return lookAndFeel.contains("darcula") || lookAndFeel.contains("dark");
+    }
+
+    private fun renderChatBlocks(tasks: List<TaskData>) {
+        logger.info("Rendering ${tasks.size} blocks")
+
+        val html = tasks.joinToString("\n\n") { task ->
+            buildTaskHtml(task)
+        }
+        logger.info("html=$html")
+        //val htmlBody = chatBlocks.joinToString("\n\n") { it.content }
+
+        //val htmlReasoningBody = chatBlocks.joinToString("\n\n") { it.reasoning }
+        //logger.info("htmlReasoningBody=$htmlReasoningBody")
+
 
         // Цвета темы
-        val panelBg = UIManager.getColor("Panel.background") ?: Color.WHITE
-        val textColor = UIManager.getColor("Label.foreground") ?: Color.BLACK
+        val panelBg = UIManager.getColor("Panel.background") ?: JBColor.WHITE
+        val textColor = UIManager.getColor("Label.foreground") ?: JBColor.BLACK
         val codeBg = EditorColorsManager.getInstance().globalScheme.defaultBackground
+
+        val bubbleBg = if (isDarkTheme()) {
+            panelBg.adjustBrightness(0.2f)
+        } else {
+            panelBg.adjustBrightness(0.8f)
+        }
+
+        val bubbleText = if (isDarkTheme()) {
+            textColor.adjustBrightness(0.2f)
+        } else {
+            textColor.adjustBrightness(0.8f)
+        }
 
         val styledHtml = """
         <html>
@@ -739,24 +765,41 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     
                 /* USER */
                 .bubble-user {
-                    align-self: flex-end;
-                    background: #2b6cff;
-                    color: white;
+                    align-self: flex-start;
+                    background: ${bubbleBg.toHex()};
+                    color: ${bubbleText.toHex()};
                     padding: 10px 14px;
-                    border-radius: 14px 14px 4px 14px;
+                    border-radius: 14px 14px 14px 4px;
                     max-width: 75%;
                 }
     
                 /* ASSISTANT */
                 .bubble-assistant {
-                    align-self: flex-start;
-                    background: #2a2a2a;
-                    color: #eaeaea;
+                    align-self: flex-end;
+                    background: ${bubbleBg.toHex()};
+                    color: ${bubbleText.toHex()};
                     padding: 10px 14px;
-                    border-radius: 14px 14px 14px 4px;
-                    max-width: 85%;
+                    border-radius: 14px 14px 4px 14px;
+                    max-width: 90%;
                 }
             
+                .reasoning {
+                    color: ${textColor.toHex()};
+                    white-space: pre-wrap;
+                    line-height: 1.4;
+                    font-family: monospace;
+                    max-width: 90%;
+                }
+                
+                .footer {
+                    padding-top: 8px;
+                    font-size: 10px;
+                    line-height: 1.0;
+                    font-family: monospace;
+                    max-width: 90%;
+                    color: #604E29;
+                }
+                
                 body { 
                     background-color: ${panelBg.toHex()}; 
                     color: ${textColor.toHex()}; 
@@ -764,7 +807,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     padding: 12px 16px; 
                     font-family: system-ui, sans-serif;
                     line-height: 1.6;
-                    font-size: 16px;
+                    font-size: 13px;
                 }
                 
                 /* БЛОК КОДА (pre) */
@@ -774,20 +817,22 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     padding: 12px;
                     overflow-x: auto;
                     max-width: 100%;
-                    font-size: 14px;
+                    font-size: 13px;
+                    white-space: pre-wrap;
+                    word-break: break-word;
                 }
                 
                 /* КОД ВНУТРИ БЛОКА */
                 pre code {
                     font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', monospace;
-                    font-size: 14px;
+                    font-size: 13px;
                     background: none;
                     padding: 0;
                 }
                 
                 /* INLINE code (в тексте) */
                 code {
-                    background-color: rgba(128, 128, 128, 0.15);
+                    background-color: rgba(128, 128, 128, 0.05);
                     padding: 2px 6px;
                     border-radius: 4px;
                     font-size: 0.9em;   /* ключевой момент */
@@ -803,22 +848,25 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     margin: 16px 0;
                     border-left: 4px solid #888888;
                     padding-left: 14px;
-                    font-size: 16px;
+                    font-size: 13px;
+                }
+                details[open] {
+                    padding-bottom: 8px;
+                    font-size: 13px;
                 }
                 
+                /* background-color: rgba(128, 128, 128, 0.12); */
                 summary {
                     cursor: pointer;
                     padding: 8px 12px;
-                    background-color: rgba(128, 128, 128, 0.12);
+                    background-color: rgba(64, 64, 64, 0.10);
                     border-radius: 6px;
                     font-weight: 500;
-                    font-size: 16px;
+                    font-size: 13px;
+                    color: ${textColor.toHex()}; 
                 }
                 
-                details[open] {
-                    padding-bottom: 8px;
-                    font-size: 16px;
-                }
+
                 
                 /* Улучшение таблиц и других блоков */
                 table { width: 100%; border-collapse: collapse; }
@@ -839,10 +887,11 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-pascal.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-lisp.min.js"></script>
             <!-- Добавь другие языки при необходимости: javascript, xml, json, bash и т.д. -->
         </head>
         <body>
-            $htmlBody
+            $html
             <script>
                 (function() {
                     console.log("[ChatPanel] init");
@@ -887,23 +936,10 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 jbCefBrowser.cefBrowser.executeJavaScript(jsCode, "", 0)
             }
         } catch (e: Exception) {
-            LOG.warn("Failed to load taskHandlers.js", e)
+            logger.warn("Failed to load taskHandlers.js", e)
         }
 
         scrollToBottom()
-    }
-    private fun recreateMarkdownPanel() {
-//
-//        remove(markdownPanel)
-//        //val newPanel = MarkdownJCEFHtmlPanel(project, markdownFile)
-//        val newPanel = JPanel()
-//        newPanel.add(jbCefBrowser.component)
-//        //addCefBrowserHandler(newPanel)
-//        add(newPanel, BorderLayout.CENTER)
-//        markdownPanel = newPanel
-//        revalidate()
-//        repaint()
-        refreshChatPanel()
     }
 
     fun addContextMenu(textComponent: JTextComponent) {
@@ -922,9 +958,9 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         menu.addSeparator()
         menu.add(clearItem)
 
-        textComponent.addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mousePressed(e: java.awt.event.MouseEvent) { if (e.isPopupTrigger) menu.show(e.component, e.x, e.y) }
-            override fun mouseReleased(e: java.awt.event.MouseEvent) { if (e.isPopupTrigger) menu.show(e.component, e.x, e.y) }
+        textComponent.addMouseListener(object : MouseAdapter() {
+            override fun mousePressed(e: MouseEvent) { if (e.isPopupTrigger) menu.show(e.component, e.x, e.y) }
+            override fun mouseReleased(e: MouseEvent) { if (e.isPopupTrigger) menu.show(e.component, e.x, e.y) }
         })
     }
 
@@ -956,7 +992,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         // 2. Обработка сообщений от JS
         jsQuery.addHandler(::handleJsQuery)
 
-
         // Добавляем LoadHandler (чтобы инжектить при перезагрузках страницы)
         val loadHandler = object : CefLoadHandlerAdapter() {
             override fun onLoadEnd(browser: CefBrowser?, frame: CefFrame?, httpStatusCode: Int) {
@@ -974,7 +1009,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     // Функция для инъекции bridge + загрузки твоего JS
     private fun injectTaskHandlers(cefBrowser: CefBrowser?) {
         if (!::jsQuery.isInitialized) {
-            LOG.error("jsQuery ещё не инициализирован")
+            logger.error("jsQuery ещё не инициализирован")
             return
         }
 
@@ -1031,7 +1066,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     }
 
     fun onTaskUpdated() {
-        rebuildMarkdownFromTasks()
+        rebuildChatBlocksFromTasks()
     }
 
     override fun dispose() {

@@ -19,10 +19,12 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
         var selectedModelKey: String = "",
         var selectedModelName: String = "",
         var baseUrl: String = "http://127.0.0.1:11434",  // общий базовый адрес // 11434 - ollama, 1234 - LM studio
-        var chatEndpointIndex: Int = 1, // 0 = /api/v1/chat, 1 = /v1/chat/completions, 2 = /v1/responses, 3 = custom.
+        var chatEndpointIndex: Int = 1, // 0 = /api/v1/chat, 1 = /v1/responses, 2 = /v1/chat/completions, 3 = custom.
         var chatEndpoint: String = "",
         var modelListEndpointIndex: Int = 1, // 0 = /api/v1/models, 1 = /v1/models, 2 = custom
         var modelListEndpoint: String = "",
+        var apiKey: String = "",
+        var backendIndex: Int = 1,
     )
 
     private var myState = State()
@@ -46,6 +48,14 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
     var selectedModelKey: String
         get() = myState.selectedModelKey
         set(value) { myState.selectedModelKey = value }
+
+    var apiKey: String
+        get() = myState.apiKey
+        set(value) { myState.apiKey = value }
+
+    var backendIndex: Int
+        get() = myState.backendIndex
+        set(value) { myState.backendIndex = value }
 
     var selectedModelName: String
         get() = myState.selectedModelName
