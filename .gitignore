@@ -28,3 +28,6 @@ gradle/
 gradlew.bat
 gradlew
 *.txt
+*.pdf
+src/main/rust/
+libs/

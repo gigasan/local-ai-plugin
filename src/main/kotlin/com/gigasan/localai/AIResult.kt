@@ -309,16 +309,16 @@ object AIResponseParser {
         val parsed = json.decodeFromJsonElement<OpenAIResponse>(element)
         logger.warn("USAGE RAW = ${parsed.usage}")
 
-        val reasoning = parsed.output?.filter { it?.type == "reasoning" }
-            ?.flatMap { it?.content ?: emptyList() }
-            ?.filter { it?.type == "reasoning_text" }
-            ?.joinToString("") { it?.text ?: "" }
+        val reasoning = parsed.output?.filter { it.type == "reasoning" }
+            ?.flatMap { it.content ?: emptyList() }
+            ?.filter { it.type == "reasoning_text" }
+            ?.joinToString("") { it.text ?: "" }
             ?: ""
 
-        val text = parsed.output?.filter { it?.type == "message" }
-            ?.flatMap { it?.content ?: emptyList() }
-            ?.filter { it?.type == "output_text" }
-            ?.joinToString("") { it?.text ?: "" }
+        val text = parsed.output?.filter { it.type == "message" }
+            ?.flatMap { it.content ?: emptyList() }
+            ?.filter { it.type == "output_text" }
+            ?.joinToString("") { it.text ?: "" }
             ?: ""
 
         return AIResult(

@@ -1,6 +1,9 @@
 package com.gigasan.localai
 
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
+import com.intellij.psi.PsiFile
+import com.intellij.psi.search.ProjectScope
 
 private val LOG = Logger.getInstance("AITool")
 
@@ -71,3 +74,9 @@ class ToolOrchestrator(private val aiClient: AIClient) {
 
 
 // tool chaining : User → AI → tool1 → AI → tool2 → AI → answer
+
+// {
+//  "action": "get_file_content",
+//  "path": "src/render/renderer.rs"
+//}
+

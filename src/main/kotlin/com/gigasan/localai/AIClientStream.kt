@@ -246,7 +246,7 @@ object StreamParser {
 
         // 3. Парсим структуру (Payload)
         val payload = try {
-            json.decodeFromString<StreamPayload>(dataString!!)
+            json.decodeFromString<StreamPayload>(dataString)
         } catch (e: Exception) {
             StreamPayload.Unknown
         }
