@@ -42,6 +42,12 @@ class ChatToolWindowFactory : ToolWindowFactory {
                         )
                     }
                 },
+                object : AnAction("DevTools", "Open cefBrowser DevTools", AllIcons.General.Web) {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        val browser = e.getData(ChatPanel.CHAT_BROWSER_KEY)
+                        browser?.cefBrowser?.openDevTools()
+                    }
+                },
             )
         )
     }

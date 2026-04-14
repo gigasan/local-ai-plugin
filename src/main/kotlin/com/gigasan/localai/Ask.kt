@@ -9,16 +9,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 class Ask : AnAction("Ask", "Ask local AI", com.intellij.icons.AllIcons.General.Balloon) {
 
     override fun actionPerformed(e: AnActionEvent) {
-        val project = e.project ?: return
-        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Chat")
-        val editor = e.getData(CommonDataKeys.EDITOR)
-        val selectedText = editor?.selectionModel?.selectedText
-        toolWindow?.show()
-        toolWindow?.activate {
-            if (!selectedText.isNullOrBlank()) {
-                ChatPanel.instance?.sendExternalMessage(selectedText)
-            }
-        }
+        ChatPanel.instance?.sendExternalMessage("Привет. Напиши простую программу на python")
     }
 
     override fun update(e: AnActionEvent) {
