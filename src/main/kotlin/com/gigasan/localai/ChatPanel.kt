@@ -1,7 +1,10 @@
 package com.gigasan.localai
 
+import com.intellij.collaboration.ui.ScrollablePanel
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.DataKey
+import com.intellij.openapi.actionSystem.DataSink
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.colors.EditorColorsManager
@@ -30,6 +33,7 @@ import kotlin.system.exitProcess
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.roots.ui.componentsList.components.ScrollablePanel
 import com.intellij.ui.JBColor
 import com.vladsch.flexmark.html.HtmlRenderer
 import com.vladsch.flexmark.html.AttributeProvider
@@ -59,7 +63,7 @@ import com.intellij.openapi.ui.Messages
 
 class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true), Disposable {
     private var updateTimer: Timer? = null
-    private var jbCefBrowser = JBCefBrowser()   // или через builder, если нужно
+    private var jbCefBrowser = JBCefBrowser() // или через builder, если нужно
     // 2. Создаём jsQuery ТОЛЬКО после того, как браузер полностью создан
     private lateinit var jsQuery: JBCefJSQuery   // используем late init
     // ← сюда добавь свой wrapper
@@ -104,6 +108,8 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
 
         var instance: ChatPanel? = null
+
+        val CHAT_BROWSER_KEY = DataKey.create<JBCefBrowser>("ChatCefBrowser")
     }
 
     init {
@@ -123,9 +129,10 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         // --- Панель задач ---
         val taskContainer = JPanel(BorderLayout()).apply {
-            val taskScroll = JBScrollPane(taskManagerPanel)
-            taskScroll.verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-            taskScroll.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            val taskScroll = JBScrollPane(taskManagerPanel).apply {
+                verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+                horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            }
             add(taskScroll, BorderLayout.CENTER)
             minimumSize = Dimension(0, 0)
             preferredSize = Dimension(Int.MAX_VALUE, 0)
@@ -204,6 +211,12 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             })
 
         logger.info("ChatPanel initialized")
+    }
+
+    override fun uiDataSnapshot(sink: DataSink) {
+        super.uiDataSnapshot(sink)
+        // "Регистрируем" наш браузер в контексте под ключом
+        sink[CHAT_BROWSER_KEY] = jbCefBrowser
     }
 
     // --- Drag-and-Drop ---
@@ -614,32 +627,15 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
 
     fun sendExternalMessage(text: String) {
-        val task = ChatPanel.buildTaskFromString(text)
+        val task = buildTaskFromString(text)
         taskManagerPanel.addTask(task)
-
-
-
-//        chatMarkdown += "**Вы:** $text\n\n"
-//        refreshMarkdownPanel()
-//
-//        Thread {
-//            try {
-//                val response = callLocalAI(text)
-//                SwingUtilities.invokeLater {
-//                    chatMarkdown += "**AI:**\n$response\n\n---\n\n"
-//                    refreshMarkdownPanel()
-//                }
-//            } catch (e: Exception) {
-//                SwingUtilities.invokeLater {
-//                    chatMarkdown += "**Ошибка:** ${e.message}\n\n---\n\n"
-//                    refreshMarkdownPanel()
-//                }
-//            }
-//        }.start()
+        updateTaskStatus(task, TaskStatus.SENDING)
+        runTaskInBackground(project, task) { updatedTask ->
+            updateTaskOnUI(updatedTask)
+        }
     }
 
     fun Color.toHex() = "#%02x%02x%02x".format(red, green, blue)
-
 
     object MarkdownRenderer {
 
@@ -686,7 +682,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     }
 
     /*
-
     if (!result.reasoning.isNullOrBlank()) {
     append(
         """
@@ -697,7 +692,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         """.trimIndent()
     )
 }
-
      */
 
     fun Color.darker(factor: Float = 0.9f): Color {
@@ -733,17 +727,71 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     }
 
     private fun renderChatBlocks(tasks: List<TaskData>) {
+
         logger.info("Rendering ${tasks.size} blocks")
 
         val html = tasks.joinToString("\n\n") { task ->
             buildTaskHtml(task)
         }
         logger.info("html=$html")
-        //val htmlBody = chatBlocks.joinToString("\n\n") { it.content }
 
-        //val htmlReasoningBody = chatBlocks.joinToString("\n\n") { it.reasoning }
-        //logger.info("htmlReasoningBody=$htmlReasoningBody")
 
+        // scan plain text for language
+        val regex = Regex("```(\\w+)")
+        val allText = tasks.joinToString("\n") { task ->
+            listOf(
+                task.request,
+                task.content,
+                task.answer
+            ).joinToString("\n")
+        }
+        val languages = regex.findAll(allText)
+            .map { it.groupValues[1] }
+            .toSet()
+        logger.info("languages=$languages")
+
+        // LANGUAGES <PRISM>
+        val deps = mapOf(
+            "c" to listOf("clike"),
+            "cpp" to listOf("c"),
+            "java" to listOf("clike"),
+            "kotlin" to listOf("java")
+        )
+
+        fun expand(lang: String, deps: Map<String, List<String>>, result: MutableSet<String>) {
+            for (dep in deps[lang].orEmpty()) {
+                expand(dep, deps, result)
+            }
+            result.add(lang)
+        }
+
+        val result = linkedSetOf<String>() // ВАЖНО: сохраняет порядок
+        for (lang in languages.sorted()) {
+            expand(lang, deps, result)
+        }
+
+        val prismCss        = loadResource("css/prism-tomorrow.min.css")
+        val prismCore       = loadResource("css/prism.min.js")
+
+        val supportedLanguages = setOf(
+            "clike", "python", "java", "kotlin", "bash", "go",
+            "rust", "c", "cpp",  "pascal", "lisp", "json", "javascript"
+            )
+
+        val loadedList = linkedSetOf<String>()
+
+        for (lang in supportedLanguages) {
+            if (result.contains(lang)) {
+                logger.info("loading $lang language")
+                loadedList.add(
+                    loadResource("css/prism-languages/prism-$lang.min.js")
+                )
+            }
+        }
+
+        val prismLangScripts = loadedList.joinToString("\n") { js ->
+            "<script>$js</script>"
+        }
 
         // Цвета темы
         val panelBg = UIManager.getColor("Panel.background") ?: JBColor.WHITE
@@ -763,6 +811,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
 
         val styledHtml = """
+        <!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
@@ -877,41 +926,33 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     color: ${textColor.toHex()}; 
                 }
                 
-
+                html {
+                  scroll-behavior: auto;
+                }
                 
                 /* Улучшение таблиц и других блоков */
                 table { width: 100%; border-collapse: collapse; }
                 th, td { border: 1px solid #666; padding: 8px; }
             </style>
-            
+
             <!-- Prism.js — лёгкая и красивая подсветка кода -->
-            <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-kotlin.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-java.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-rust.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-cpp.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-pascal.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-lisp.min.js"></script>
+            <style> $prismCss </style>
+            <script> $prismCore </script>
+            
+            $prismLangScripts
             <!-- Добавь другие языки при необходимости: javascript, xml, json, bash и т.д. -->
+
         </head>
         <body>
             $html
             <script>
-                (function() {
-                    console.log("[ChatPanel] init");
-                
+                document.addEventListener('DOMContentLoaded', () => {
                     if (window.Prism) {
                         Prism.highlightAll();
                     }
-                })();
+                });
             </script>
+
             <script>
                 function toggleCode(btn) {
                     const pre = btn.parentElement.nextElementSibling;
@@ -922,7 +963,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     }
                 }
             </script>
-            <script>s            
+            <script>            
                 function copyCode(btn) {
                     const code = btn.parentElement.nextElementSibling.innerText;
                     navigator.clipboard.writeText(code).then(() => {
@@ -951,6 +992,12 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
 
         scrollToBottom()
+    }
+
+    fun loadResource(path: String): String {
+        return requireNotNull(
+            this::class.java.classLoader.getResourceAsStream(path)
+        ).bufferedReader().use { it.readText() }
     }
 
     fun addContextMenu(textComponent: JTextComponent) {
@@ -999,8 +1046,8 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private fun addJbCefBrowserHandler() {
         val cefBrowser = jbCefBrowser.cefBrowser
 
-        jsQuery = JBCefJSQuery.create(jbCefBrowser)   // ← самый стабильный способ сейчас
         // 2. Обработка сообщений от JS
+        jsQuery = JBCefJSQuery.create(jbCefBrowser)   // ← самый стабильный способ сейчас
         jsQuery.addHandler(::handleJsQuery)
 
         // Добавляем LoadHandler (чтобы инжектить при перезагрузках страницы)
@@ -1011,10 +1058,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 }
             }
         }
-        jbCefBrowser.jbCefClient.addLoadHandler(loadHandler, jbCefBrowser.cefBrowser)
-
-        // Первый инжект сразу
-        injectTaskHandlers(cefBrowser)
+        jbCefBrowser.jbCefClient.addLoadHandler(loadHandler, cefBrowser)
     }
 
     // Функция для инъекции bridge + загрузки твоего JS
@@ -1042,6 +1086,34 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         // Потом загружаем твой taskHandlers.js (как строку)
         val taskHandlersJs = loadTaskHandlersJs()   // см. ниже
         cefBrowser?.executeJavaScript(taskHandlersJs, null, 0)
+
+        val scrollFixScript = """
+    (function() {
+        window.addEventListener('wheel', function(e) {
+            if (e.ctrlKey) return;
+
+            // Берем коэффициент масштабирования системы (например, 1.25 или 2.0)
+            const dpr = window.devicePixelRatio || 1;
+            
+            // Если дельта очень маленькая (особенность JCEF), 
+            // мы компенсируем её, учитывая масштаб
+            let multiplier = 15 * dpr; 
+
+            if (e.deltaMode === 1) { // Lines
+                multiplier *= 1.5; 
+            }
+
+            e.preventDefault();
+            window.scrollBy({
+                top: e.deltaY * multiplier,
+                left: e.deltaX * multiplier,
+                behavior: 'auto'
+            });
+        }, { passive: false });
+    })();
+""".trimIndent()
+
+        cefBrowser?.executeJavaScript(scrollFixScript, null, 0)
     }
 
     private fun loadTaskHandlersJs(): String {
@@ -1071,8 +1143,16 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
     private fun scrollToBottom() {
         jbCefBrowser.cefBrowser.executeJavaScript(
-            "window.scrollTo(0, document.body.scrollHeight);",
-            jbCefBrowser.cefBrowser.url, 0
+"""
+(function() {
+    const el = document.scrollingElement || document.documentElement;
+    if (el) {
+        el.scrollTop = el.scrollHeight;
+    }
+})();
+""".trimIndent(),
+            jbCefBrowser.cefBrowser.url,
+            0
         )
     }
 

@@ -11,23 +11,32 @@
             if (!taskId) return;
 
             el.addEventListener("click", () => {
-                window.taskBridge.send("click:" + taskId);
+                window.taskBridge?.send("click:" + taskId);
             });
 
             el.addEventListener("mouseenter", () => {
-                window.taskBridge.send("hover:" + taskId);
+                window.taskBridge?.send("hover:" + taskId);
             });
 
             el.addEventListener("mouseleave", () => {
-                window.taskBridge.send("hover:exit");
+                window.taskBridge?.send("hover:exit");
             });
         });
     }
 
-    // MutationObserver
-    const observer = new MutationObserver(attachTaskHandlers);
-    observer.observe(document.body, { childList: true, subtree: true });
+    function initObserver() {
+        if (!document.body) return;
 
-    // Первый запуск
-    attachTaskHandlers();
+        const observer = new MutationObserver(attachTaskHandlers);
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        attachTaskHandlers();
+    }
+
+    // 👉 Ждём DOM
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initObserver);
+    } else {
+        initObserver();
+    }
 })();

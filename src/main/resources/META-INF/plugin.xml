@@ -59,4 +59,9 @@
         </action>
     </actions>
 
+    <applicationListeners>
+        <listener class="com.gigasan.localai.MyPluginInitializer"
+                  topic="com.intellij.ide.AppLifecycleListener"/>
+    </applicationListeners>
+
 </idea-plugin>
