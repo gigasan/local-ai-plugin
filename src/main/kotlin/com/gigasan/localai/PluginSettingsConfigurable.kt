@@ -30,6 +30,7 @@ class PluginSettingsConfigurable : Configurable {
 
     private val baseUrl = JTextField()
     private val apiKey = JTextField()
+    private val maxTokenLimit = JTextField()
 
     private val modelComboBox = ComboBox<String>()
     private val modelsList = mutableListOf<Model>()
@@ -115,6 +116,7 @@ class PluginSettingsConfigurable : Configurable {
         val formPanel = FormBuilder.createFormBuilder()
             .addLabeledComponent("Base URL:", baseUrl)
             .addLabeledComponent("API Key:", apiKey)
+            .addLabeledComponent("Token Limit:", maxTokenLimit)
             .addSeparator()
             .addLabeledComponent("Model list endpoint:", modelListEndpointComboBox)
             .addComponent(modelListCustomPanel)
@@ -284,7 +286,7 @@ class PluginSettingsConfigurable : Configurable {
         val connection = url.openConnection() as HttpURLConnection
         connection.connectTimeout = 5000
         connection.readTimeout = 5000
-
+        connection.requestMethod = "GET"
         return try {
             connection.inputStream.bufferedReader().use { reader ->
                 val response = reader.readText()
@@ -303,6 +305,7 @@ class PluginSettingsConfigurable : Configurable {
         val settings = PluginSettings.instance
 
         // 1. Проверяем текстовые поля всегда
+        if (settings.maxTokenLimit != maxTokenLimit.text.trim().toInt()) return true
         if (settings.apiKey != apiKey.text.trim()) return true
         if (settings.baseUrl != baseUrl.text.trim()) return true
         if (settings.backendIndex != backendsComboBox.selectedIndex) return true
@@ -325,6 +328,7 @@ class PluginSettingsConfigurable : Configurable {
         val settings = PluginSettings.instance
 
         // Сохраняем текстовые поля всегда
+        settings.maxTokenLimit = maxTokenLimit.text.trim().toInt()
         settings.apiKey = apiKey.text.trim()
         settings.baseUrl = baseUrl.text.trim()
         settings.backendIndex = backendsComboBox.selectedIndex
@@ -346,6 +350,7 @@ class PluginSettingsConfigurable : Configurable {
 
     override fun reset() {
         val settings = PluginSettings.instance
+        maxTokenLimit.text = settings.maxTokenLimit.toString()
         apiKey.text = settings.apiKey
         modelListCustomEndpoint.text = settings.modelListEndpoint.ifBlank { "/v1/models" }
         chatCustomEndpoint.text = settings.chatEndpoint.ifBlank { "/v1/responses" }

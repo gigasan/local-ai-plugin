@@ -6,6 +6,7 @@ import com.google.gson.JsonObject
 interface PluginConfigProvider {
     fun buildChatUrl(): String
     fun buildApiKey(): String
+    fun buildMaxTokenLimit(): Int
     fun buildBackend(): AIBackendType
     fun buildChatModel(): String
     fun buildRequestBody(prompt: String): JsonObject
@@ -30,6 +31,10 @@ class DefaultChatConfigProvider(
 
     override fun buildApiKey(): String {
         return settings.apiKey.orEmpty()
+    }
+
+    override fun buildMaxTokenLimit(): Int {
+        return settings.maxTokenLimit.or(8192)
     }
 
     override fun buildChatModel(): String {
@@ -71,7 +76,7 @@ class DefaultChatConfigProvider(
                 else -> { // 2 -> /v1/chat/completions (OpenAI-совместимый)
                     addProperty("model", selectedModel)
                     addProperty("stream", false)
-                    addProperty("max_tokens", 1000)
+                    addProperty("max_tokens", buildMaxTokenLimit())
                     addProperty("return_reasoning", false)
                     addProperty("temperature", 0.0)
                     val messages = JsonArray()

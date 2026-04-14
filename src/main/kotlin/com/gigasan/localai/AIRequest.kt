@@ -18,14 +18,16 @@ data class ChatMessage(
     val toolName: String? = null
 )
 
+private val provider = DefaultChatConfigProvider(PluginSettings.instance)
+
 data class ChatContext(
     val model: String,
     val system: String,
     val messages: List<ChatMessage>,
     val temperature: Double = 0.7,
-    val maxTokens: Int = 8000,
+    val maxTokens: Int = provider.buildMaxTokenLimit(),
     val metadata: Map<String, String> = emptyMap(),
-    val contextLen: Int = 8192,
+    val contextLen: Int = provider.buildMaxTokenLimit(),
     val stream: Boolean = false,
 )
 
@@ -94,16 +96,20 @@ class ChatRequestBuilder {
         metadata[key] = value
     }
 
+
+
     fun build(task: TaskData? = null): ChatContext {
+
+        val provider = DefaultChatConfigProvider(PluginSettings.instance)
 
         return ChatContext(
             model = model,
             messages = messages,
             temperature = temperature ?: 0.7,
-            maxTokens = maxTokens ?: 1000,
+            maxTokens = maxTokens ?: provider.buildMaxTokenLimit(),
             metadata = metadata,
             system = "Ты агент, говорящий только на русском языке",
-            contextLen = 8192,
+            contextLen = provider.buildMaxTokenLimit(),
             stream = stream,
         )
     }
@@ -148,9 +154,7 @@ object LmStudioAdapter {
 
             put("model", ctx.model)
 
-            ctx.system?.let {
-                put("system_prompt", it)
-            }
+            put("system_prompt", ctx.system)
 
             if (ctx.messages.size == 1) {
                 put("input", ctx.messages[0].content)

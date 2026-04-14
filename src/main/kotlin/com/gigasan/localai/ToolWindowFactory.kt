@@ -8,6 +8,8 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.options.ShowSettingsUtil
 import javax.swing.SwingUtilities
+import com.gigasan.localai.ChatPanel
+import com.intellij.icons.AllIcons
 
 class ChatToolWindowFactory : ToolWindowFactory {
 
@@ -27,17 +29,19 @@ class ChatToolWindowFactory : ToolWindowFactory {
             }
         }
 
-        // Добавим шестерёнку с меню действий
         toolWindow.setTitleActions(
             listOf(
-                object : AnAction("Settings") {
+                Ask(),
+                Refactor(),
+                Analyze(),
+                object : AnAction("Settings", "Settings", AllIcons.General.Settings) {
                     override fun actionPerformed(e: AnActionEvent) {
                         ShowSettingsUtil.getInstance().showSettingsDialog(
                             e.project,
                             PluginSettingsConfigurable::class.java
                         )
                     }
-                }
+                },
             )
         )
     }

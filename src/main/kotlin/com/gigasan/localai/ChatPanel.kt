@@ -41,7 +41,7 @@ import com.vladsch.flexmark.parser.Parser
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import kotlin.text.format
-
+import com.intellij.openapi.ui.Messages
 
 //sealed class ChatBlock {
 //    data class Text(val value: String): ChatBlock()
@@ -87,6 +87,22 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private val logger = Logger.getInstance("ChatPanel")
 
     companion object {
+        fun buildTaskFromString(text: String): TaskData {
+            val task = TaskData(
+                id = System.currentTimeMillis().toString(),
+                title = "✏️",
+                //description = "chat message",
+                content = text,
+                zoneType = "Chat",
+                request = "",
+                answer = "",
+                status = TaskStatus.CREATED,
+                reasoning = "",
+                hint = "",
+            )
+            return task
+        }
+
         var instance: ChatPanel? = null
     }
 
@@ -156,7 +172,13 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         sendButton.addActionListener { sendMessage() }
         inputField.addKeyListener(object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ENTER) sendMessage()
+                if (e.keyCode == KeyEvent.VK_ENTER)
+                {
+                    sendMessage()
+                    //KotlinProjectAnalyzer.log()
+                    //Messages.showInfoMessage(project, projectMap, "Project Map")
+                }
+
             }
         })
 
@@ -436,7 +458,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 .user(request)
                 .stream(true)
                 .model(model)
-                .maxTokens(8000)
+                .maxTokens(provider.buildMaxTokenLimit())
                 .build(task)
             logger.warn("chatContext = $chatContext")
             val stateManager = StateManager()
@@ -526,22 +548,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         })
     }
 
-    private fun buildTaskFromString(text: String): TaskData {
-        val task = TaskData(
-            id = System.currentTimeMillis().toString(),
-            title = "✏️",
-            //description = "chat message",
-            content = text,
-            zoneType = "Chat",
-            request = "",
-            answer = "",
-            status = TaskStatus.CREATED,
-            reasoning = "",
-            hint = "",
-        )
-        return task
-    }
-
     private fun sendMessage() {
         val mainText = inputField.text.trim()
         if (mainText.isEmpty()) return
@@ -608,6 +614,11 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
 
     fun sendExternalMessage(text: String) {
+        val task = ChatPanel.buildTaskFromString(text)
+        taskManagerPanel.addTask(task)
+
+
+
 //        chatMarkdown += "**Вы:** $text\n\n"
 //        refreshMarkdownPanel()
 //

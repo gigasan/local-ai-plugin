@@ -23,7 +23,6 @@ data class TaskData(
     val id: String,
     var title: String,
     var hint: String,
-    //var description: String,
     var content: String,
     var zoneType: String,
     var request: String,

@@ -25,6 +25,8 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
         var modelListEndpoint: String = "",
         var apiKey: String = "",
         var backendIndex: Int = 1,
+        var contextSize: Int = 8192,
+        var maxTokenLimit: Int = 2000,
     )
 
     private var myState = State()
@@ -52,6 +54,10 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
     var apiKey: String
         get() = myState.apiKey
         set(value) { myState.apiKey = value }
+
+    var maxTokenLimit: Int
+        get() = myState.maxTokenLimit
+        set(value) { myState.maxTokenLimit = value }
 
     var backendIndex: Int
         get() = myState.backendIndex

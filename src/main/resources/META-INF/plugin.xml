@@ -1,5 +1,5 @@
 <idea-plugin>
-    <id>com.gigasan.localaichat</id>
+    <id>com.gigasan.localai</id>
     <name>Local AI Chat</name>
     <version>0.3.0</version>
     <vendor url="https://github.com/gigasan">GigaSan</vendor>
@@ -18,6 +18,32 @@
         <plugin id="org.intellij.plugins.markdown" />
     </dependencies>
 
+    <!-- Optional Kotlin (только если пользователь установит Kotlin-плагин) -->
+    <depends optional="true" config-file="com.gigasan.localai-withKotlin.xml">org.jetbrains.kotlin</depends>
+
+    <!-- Optional Rust (только если пользователь установит Rust-плагин) -->
+    <depends optional="true" config-file="com.gigasan.localai-withRust.xml">org.rust.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.gigasan.localai.PluginSettings"/>
+        <projectConfigurable
+            instance="com.gigasan.localai.PluginSettingsConfigurable"
+            displayName="Local AI Chat Settings"
+            id="LocalAI.Settings"/>
+
+        <toolWindow
+            id="Local AI Chat"
+            factoryClass="com.gigasan.localai.ChatToolWindowFactory"
+            anchor="right"
+            icon="/icons/chat.svg"
+            secondary="true"
+        />
+    </extensions>
+
+    <extensions defaultExtensionNs="org.jetbrains.kotlin">
+        <supportsKotlinPluginMode supportsK1="true" supportsK2="true" />
+    </extensions>
+
     <actions>
         <action id="LocalAI.Ask"
                 class="com.gigasan.localai.Ask"
@@ -25,23 +51,12 @@
                 description="Send selected text into local chat">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
-
+        <action id="LocalAI.Refactor"
+                class="com.gigasan.localai.Refactor"
+                text="Refactor with Local AI Model"
+                description="Refactor selected function">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
     </actions>
-
-    <extensions defaultExtensionNs="com.intellij">
-        <applicationService serviceImplementation="com.gigasan.localai.PluginSettings"/>
-
-        <projectConfigurable
-                instance="com.gigasan.localai.PluginSettingsConfigurable"
-                displayName="Local AI Chat Settings"
-                id="LocalAI.Settings"/>
-
-        <toolWindow id="Local AI Chat"
-                    factoryClass="com.gigasan.localai.ChatToolWindowFactory"
-                    anchor="right"
-                    icon="/icons/chat.svg"
-                    secondary="true"
-        />
-    </extensions>
 
 </idea-plugin>
