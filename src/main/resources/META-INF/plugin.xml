@@ -1,5 +1,5 @@
 <idea-plugin>
-    <id>com.gigasan.localai</id>
+    <id>com.gigasan.ai</id>
     <name>Local AI Chat</name>
     <version>0.3.0</version>
     <vendor email="chernenko79@gmail.com">GigaSan</vendor>
@@ -19,21 +19,21 @@
     </dependencies>
 
     <!-- Optional Kotlin (только если пользователь установит Kotlin-плагин) -->
-    <depends optional="true" config-file="com.gigasan.localai-withKotlin.xml">org.jetbrains.kotlin</depends>
+    <depends optional="true" config-file="com.gigasan.ai-withKotlin.xml">org.jetbrains.kotlin</depends>
 
     <!-- Optional Rust (только если пользователь установит Rust-плагин) -->
-    <depends optional="true" config-file="com.gigasan.localai-withRust.xml">org.rust.lang</depends>
+    <depends optional="true" config-file="com.gigasan.ai-withRust.xml">org.rust.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <applicationService serviceImplementation="com.gigasan.localai.PluginSettings"/>
+        <applicationService serviceImplementation="com.gigasan.ai.config.PluginSettings"/>
         <projectConfigurable
-            instance="com.gigasan.localai.PluginSettingsConfigurable"
+            instance="com.gigasan.ai.config.PluginSettingsConfigurable"
             displayName="Local AI Chat Settings"
             id="LocalAI.Settings"/>
 
         <toolWindow
             id="Local AI Chat"
-            factoryClass="com.gigasan.localai.ChatToolWindowFactory"
+            factoryClass="com.gigasan.ai.ui.chat.ChatToolWindowFactory"
             anchor="right"
             icon="/icons/chat.svg"
             secondary="true"
@@ -46,19 +46,19 @@
 
     <actions>
         <action id="LocalAI.Ask"
-                class="com.gigasan.localai.AskAction"
+                class="com.gigasan.ai.actions.AskAction"
                 text="Ask Local AI Model"
                 description="Send selected text into AI chat">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
         <action id="LocalAI.Refactor"
-                class="com.gigasan.localai.RefactorAction"
+                class="com.gigasan.ai.actions.RefactorAction"
                 text="Refactor with Local AI Model"
                 description="Refactor selected function">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
         <action id="LocalAI.Analyze"
-                class="com.gigasan.localai.AnalyzeAction"
+                class="com.gigasan.ai.actions.AnalyzeAction"
                 text="Scan Project Files for AI Context"
                 description="Refactor whole project">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
@@ -67,7 +67,7 @@
     </actions>
 
     <applicationListeners>
-        <listener class="com.gigasan.localai.MyPluginInitializer"
+        <listener class="com.gigasan.ai.config.MyPluginInitializer"
                   topic="com.intellij.ide.AppLifecycleListener"/>
     </applicationListeners>
 

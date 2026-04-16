@@ -28,6 +28,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
     implementation("org.xerial:sqlite-jdbc:3.45.2.0")
+    implementation("org.eclipse.jgit:org.eclipse.jgit:6.9.0.202403050737-r")
     intellijPlatform {
         intellijIdea(targetVersion)
         bundledPlugin("com.intellij.java")
@@ -40,7 +41,7 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         name = "Local AI Chat"
-        version = "0.3.0"
+        version = "0.4.0"
         description = "AI-чат с поддержкой Kotlin и Rust"
         ideaVersion {
             sinceBuild = "253"      // с 2025.3.2 и новее
