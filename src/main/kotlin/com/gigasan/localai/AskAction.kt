@@ -3,10 +3,8 @@ package com.gigasan.localai
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.wm.ToolWindowManager
 
-class Ask : AnAction("Ask", "Ask local AI", com.intellij.icons.AllIcons.General.Balloon) {
+class AskAction : AnAction("Ask", "Ask local AI", com.intellij.icons.AllIcons.General.Balloon) {
 
     override fun actionPerformed(e: AnActionEvent) {
         ChatPanel.instance?.sendExternalMessage("Привет. Напиши простую программу на python")

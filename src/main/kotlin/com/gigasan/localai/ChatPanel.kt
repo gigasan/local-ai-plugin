@@ -349,12 +349,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             append("<div class='chat'>")
                 if (task.request.isNotBlank()) {
                     append("<div class='bubble-user'>")
+                    append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
                     append(MarkdownRenderer.toHtml(task.request))
                     append("</div>")
                 }
 
                 if (task.content.isNotBlank()) {
                     append("<div class='bubble-user'>")
+                    append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
                     append(MarkdownRenderer.toHtml(task.content))
                     append("</div>")
                 }
@@ -816,123 +818,209 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         <head>
             <meta charset="UTF-8">
             <style>
+                /* 1. ОБЩИЕ НАСТРОЙКИ (Layout) */
+                body { 
+                    background-color: #191a1c; 
+                    color: #d1d3d9; 
+                    margin: 0; 
+                    padding: 12px 16px; 
+                    font-family: system-ui, -apple-system, sans-serif;
+                    line-height: 1.6;
+                    font-size: 13px;
+                }
             
                 .chat {
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
                 }
-    
-                /* USER */
+            
+                /* 2. ПУЗЫРИ СООБЩЕНИЙ */
+                .bubble-user, .bubble-assistant {
+                    padding: 10px 14px;
+                    background: #141516; /* Тёмный фон для обоих */
+                    color: #a7a9ae;
+                    max-width: 85%;
+                }
+            
                 .bubble-user {
                     align-self: flex-start;
-                    background: ${bubbleBg.toHex()};
-                    color: ${bubbleText.toHex()};
-                    padding: 10px 14px;
                     border-radius: 14px 14px 14px 4px;
-                    max-width: 75%;
+                }
+            
+                /* Контейнер пузыря теперь должен быть относительным для позиционирования кнопки */
+                .bubble-user {
+                    position: relative;
+                    transition: max-height 0.3s ease-out;
+                    overflow: hidden;
                 }
     
-                /* ASSISTANT */
+                /* Класс для свернутого состояния */
+                .bubble-user.collapsed {
+                    max-height: 40px; /* Высота одной строки + отступы */
+                    cursor: pointer;
+                }
+    
+                /* Кнопка сворачивания */
+                .collapse-btn {
+                    position: absolute;
+                    top: 4px;
+                    right: 8px;
+                    background: #2d2d2d;
+                    color: #a7a9ae;
+                    border: 1px solid #444;
+                    border-radius: 4px;
+                    font-size: 10px;
+                    cursor: pointer;
+                    opacity: 0.5;
+                    z-index: 10;
+                }
+    
+                .collapse-btn:hover {
+                    opacity: 1;
+                    background: #3d3d3d;
+                }
+    
+                /* Чтобы текст в свернутом виде не обрывался некрасиво */
+                .bubble-user.collapsed::after {
+                    content: "";
+                    position: absolute;
+                    bottom: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 20px;
+                    background: linear-gradient(transparent, #141516);
+                }
+            
+            
                 .bubble-assistant {
                     align-self: flex-end;
-                    background: ${bubbleBg.toHex()};
-                    color: ${bubbleText.toHex()};
-                    padding: 10px 14px;
                     border-radius: 14px 14px 4px 14px;
                     max-width: 90%;
                 }
             
-                .reasoning {
-                    color: ${textColor.toHex()};
-                    white-space: pre-wrap;
-                    line-height: 1.4;
-                    font-family: monospace;
-                    max-width: 90%;
+                /* 3. БЛОКИ КОДА (Интеграция с Prism.js) */
+                
+                /* Обертка для кнопок (Copy/Collapse) */
+                .code-header {
+                    display: flex;
+                    justify-content: flex-end;    /* Кнопки прижаты к правому краю */
+                    align-items: center;
+                    background: #2b2d30;          /* Цвет заголовка чуть светлее основного фона */
+                    padding: 4px 8px;
+                    border-radius: 6px 6px 0 0;
+                    gap: 4px;
                 }
                 
+                /* Название языка слева (если оно у тебя в <span>) */
+                .code-header span {
+                    margin-right: auto;           /* Отталкивает кнопки вправо */
+                    color: #6a6a6a;
+                    font-size: 11px;
+                    font-family: monospace;
+                    text-transform: lowercase;
+                }
+                
+                .code-header button {
+                    background: transparent;      /* Убираем массивный фон */
+                    color: #7a7a7a;               /* Делаем текст темнее/серее */
+                    border: 1px solid #444;       /* Тонкая темная рамка */
+                    border-radius: 3px;
+                    font-size: 10px;              /* Уменьшаем шрифт */
+                    padding: 2px 6px;             /* Минимальные отступы */
+                    cursor: pointer;
+                    transition: all 0.2s ease;    /* Плавное изменение при наведении */
+                    margin-left: 4px;             /* Расстояние между кнопками */
+                }
+
+                .code-header button:hover {
+                    color: #afb1b3;               /* При наведении текст становится светлее */
+                    background: #36393e;          /* И чуть подсвечивается фон */
+                    border-color: #555;
+                }
+                
+                pre {
+                    /* 1. Вместо переноса строк возвращаем скролл */
+                    white-space: pre !important; 
+                    overflow-x: auto !important; 
+                    
+                    /* 2. Ограничиваем ширину, чтобы блок не распирал чат */
+                    max-width: 100%;
+                    display: block;
+                
+                    /* 3. Оформление */
+                    background-color: #1e1f22;
+                    padding: 12px;
+                    border-radius: 6px;
+                    margin: 8px 0;
+                }
+                
+                /* Настройка полосы прокрутки (scrollbar), чтобы она была тонкой и аккуратной */
+                pre::-webkit-scrollbar {
+                    height: 4px; /* Горизонтальный скролл будет тонким */
+                }
+                
+                pre::-webkit-scrollbar-thumb {
+                    background: #3e4043;
+                    border-radius: 4px;
+                }
+                
+                pre::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                
+                code {
+                    word-wrap: break-word;
+                }
+            
+                /* Настройка самого блока кода */
+                pre[class*="language-"] {
+                    margin: 0 0 12px 0 !important; /* Убираем внешние отступы Prism */
+                    padding: 12px !important;
+                    border-radius: 0 0 6px 6px; /* Скругляем только низ, если есть хедер */
+                    background: #1e1f22 !important; /* Цвет как в IntelliJ */
+                    font-size: 13px !important;
+                    line-height: 1.5;
+                    white-space: pre-wrap !important; /* Если Prism все-таки подцепился, убеждаемся, что он тоже переносит */
+                }
+            
+                /* Inline код (внутри текста) */
+                :not(pre) > code {
+                    background-color: rgba(255, 255, 255, 0.1) !important;
+                    padding: 2px 5px !important;
+                    border-radius: 4px;
+                    color: #e2c08d !important; /* Выделяем цветом как в IDE */
+                    font-family: ui-monospace, 'Cascadia Mono', monospace;
+                    font-size: 0.95em;
+                }
+            
+                /* 4. ЭЛЕМЕНТЫ ИНТЕРФЕЙСА (Details, Footer) */
+                details {
+                    margin: 12px 0;
+                    border-left: 2px solid #3e4043;
+                    padding-left: 12px;
+                }
+            
+                summary {
+                    cursor: pointer;
+                    padding: 6px 10px;
+                    background-color: rgba(255, 255, 255, 0.03);
+                    border-radius: 4px;
+                    font-weight: 500;
+                    color: #d1d3d9;
+                }
+            
                 .footer {
                     padding-top: 8px;
                     font-size: 10px;
-                    line-height: 1.0;
                     font-family: monospace;
-                    max-width: 90%;
                     color: #604E29;
                 }
-                
-                body { 
-                    background-color: ${panelBg.toHex()}; 
-                    color: ${textColor.toHex()}; 
-                    margin: 0; 
-                    padding: 12px 16px; 
-                    font-family: system-ui, sans-serif;
-                    line-height: 1.6;
-                    font-size: 13px;
-                }
-                
-                /* БЛОК КОДА (pre) */
-                pre {
-                    background-color: ${codeBg.toHex()};
-                    border-radius: 6px;
-                    padding: 12px;
-                    overflow-x: auto;
-                    max-width: 100%;
-                    font-size: 13px;
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                }
-                
-                /* КОД ВНУТРИ БЛОКА */
-                pre code {
-                    font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', monospace;
-                    font-size: 13px;
-                    background: none;
-                    padding: 0;
-                }
-                
-                /* INLINE code (в тексте) */
-                code {
-                    background-color: rgba(128, 128, 128, 0.05);
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                    font-size: 0.9em;   /* ключевой момент */
-                    font-family: ui-monospace, 'Cascadia Mono', monospace;
-                }
-                
-                p {
-                    margin: 6px 0;
-                }
-                
-                /* Важно для списков <details> / <summary> */
-                details {
-                    margin: 16px 0;
-                    border-left: 4px solid #888888;
-                    padding-left: 14px;
-                    font-size: 13px;
-                }
-                details[open] {
-                    padding-bottom: 8px;
-                    font-size: 13px;
-                }
-                
-                /* background-color: rgba(128, 128, 128, 0.12); */
-                summary {
-                    cursor: pointer;
-                    padding: 8px 12px;
-                    background-color: rgba(64, 64, 64, 0.10);
-                    border-radius: 6px;
-                    font-weight: 500;
-                    font-size: 13px;
-                    color: ${textColor.toHex()}; 
-                }
-                
-                html {
-                  scroll-behavior: auto;
-                }
-                
-                /* Улучшение таблиц и других блоков */
-                table { width: 100%; border-collapse: collapse; }
-                th, td { border: 1px solid #666; padding: 8px; }
+            
+                /* Утилиты */
+                p { margin: 6px 0; }
+                table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+                th, td { border: 1px solid #444; padding: 6px; }
             </style>
 
             <!-- Prism.js — лёгкая и красивая подсветка кода -->
@@ -952,14 +1040,30 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     }
                 });
             </script>
-
             <script>
-                function toggleCode(btn) {
-                    const pre = btn.parentElement.nextElementSibling;
-                    if (pre.style.display === "none") {
-                        pre.style.display = "block";
+                function toggleBubble(btn) {
+                    const bubble = btn.parentElement;
+                    const isCollapsed = bubble.classList.toggle('collapsed');
+                    btn.innerText = isCollapsed ? 'expand' : 'collapse';
+                    
+                    // Опционально: если мы разворачиваем, скроллим к началу пузыря
+                    if (!isCollapsed) {
+                        bubble.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }
+            </script>
+            <script>
+                function toggleCode(button) {
+                    // Находим блок кода в том же контейнере, где и кнопка
+                    const container = button.closest('.code-block');
+                    const pre = container ? container.querySelector('pre') : button.parentElement.nextElementSibling;
+                    
+                    if (pre.style.display === 'none') {
+                        pre.style.display = 'block';
+                        button.innerText = 'collapse';
                     } else {
-                        pre.style.display = "none";
+                        pre.style.display = 'none';
+                        button.innerText = 'expand';
                     }
                 }
             </script>

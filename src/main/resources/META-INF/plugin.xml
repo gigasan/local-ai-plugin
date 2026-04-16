@@ -46,17 +46,24 @@
 
     <actions>
         <action id="LocalAI.Ask"
-                class="com.gigasan.localai.Ask"
+                class="com.gigasan.localai.AskAction"
                 text="Ask Local AI Model"
-                description="Send selected text into local chat">
+                description="Send selected text into AI chat">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
         <action id="LocalAI.Refactor"
-                class="com.gigasan.localai.Refactor"
+                class="com.gigasan.localai.RefactorAction"
                 text="Refactor with Local AI Model"
                 description="Refactor selected function">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
+        <action id="LocalAI.Analyze"
+                class="com.gigasan.localai.AnalyzeAction"
+                text="Scan Project Files for AI Context"
+                description="Refactor whole project">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+
     </actions>
 
     <applicationListeners>

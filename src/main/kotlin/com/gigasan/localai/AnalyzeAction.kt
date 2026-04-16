@@ -2,15 +2,41 @@ package com.gigasan.localai
 
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
+import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor
 import kotlin.collections.joinToString
 
-class Analyze: AnAction("Analyze Project", "Scan files for AI context", com.intellij.icons.AllIcons.Actions.Refresh) {
+interface ProjectAnalyzer {
+    fun analyzePsiFile(psiFile: PsiFile, deep: Boolean): String
+    fun psiFileToMemberChooserList(psiFile: PsiFile): List<UniversalMember>
+}
+
+fun projectHasKotlinSource(project: Project): Boolean {
+    var found = false
+
+    ProjectRootManager.getInstance(project)
+        .fileIndex
+        .iterateContent { file ->
+            if (file.extension == "kt") {
+                found = true
+                false // остановить обход
+            } else {
+                true // продолжить
+            }
+        }
+
+    return found
+}
+
+class AnalyzeAction: AnAction("Analyze Project", "Scan Project files for AI context", com.intellij.icons.AllIcons.Actions.DependencyAnalyzer) {
+
+    private val logger = Logger.getInstance("AnalyzeAction")
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -22,30 +48,40 @@ class Analyze: AnAction("Analyze Project", "Scan files for AI context", com.inte
                     // Читать PSI можно только в Read Action
                     com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
                         try {
+                            val isKotlin = projectHasKotlinSource(project)
+                            val projectAnalyzer = if (isKotlin) {
+                                KotlinProjectAnalyzer()
+                            } else {
+                                RustProjectAnalyzer()
+                            }
 
-                            val kotlinProjectAnalyzer = KotlinProjectAnalyzer()
-                            val rustProjectAnalyzer = RustProjectAnalyzer()
-
-                            val extensions = listOf("rs", "kt")
+                            val extensions = if (isKotlin) {
+                                listOf("kt")
+                            } else {
+                                listOf("rs")
+                            }
+                            logger.warn("isKotlin=$isKotlin")
                             val projectPsiFiles = getProjectPsiFiles(project, extensions)
                             val projectSummary = StringBuilder()
 
+                            logger.warn("Start Project alanyze=${project.name}")
                             projectPsiFiles.forEach { psiFile ->
                                 // метод анализа для каждого файла
-                                val lang = identifyContext(psiFile)
-                                projectSummary.append(kotlinProjectAnalyzer.analyzeKotlinPsiFile(psiFile, true) + "\n\n")
+                                //val lang = identifyContext(psiFile)
+                                logger.warn("Start File alanyze=${psiFile.name}")
+                                projectSummary.append(projectAnalyzer.analyzePsiFile(psiFile, true) + "\n\n")
                             }
+
                             // Вывод результата (возвращаемся в UI поток)
                             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-                                // Здесь выведи результат в чат или лог
-                                println("Project analysis complete!")
+                                logger.warn("Project analysis complete!")
                                 ChatPanel.instance?.sendExternalMessage(projectSummary.toString())
                                 // К примеру, покажем уведомление
-//                                                com.intellij.openapi.ui.Messages.showInfoMessage(
-//                                                    project,
-//                                                    "Found classes: \n${projectMap.take(500)}...", // берем кусочек для превью
-//                                                    "Analysis Result"
-//                                                )
+                                //com.intellij.openapi.ui.Messages.showInfoMessage(
+                                //    project,
+                                //    "Found classes: \n${projectMap.take(500)}...", // берем кусочек для превью
+                                //    "Analysis Result"
+                                //)
                             }
                         } catch (ex: Exception) {
                             ex.printStackTrace()
@@ -123,30 +159,33 @@ class Analyze: AnAction("Analyze Project", "Scan files for AI context", com.inte
     fun identifyContext(file: PsiFile): String {
         val language = file.language.id // Возвратит "Kotlin", "Rust", "JAVA" и т.д.
         val virtualFile = file.virtualFile
+        logger.info("language=$language")
 
         when (language) {
             "Kotlin" -> {
                 // Ищем KtNamedFunction, KtClass
                 val kotlinProjectAnalyzer = KotlinProjectAnalyzer()
-                return kotlinProjectAnalyzer.analyzeKotlinPsiFile(file, true)
+                return kotlinProjectAnalyzer.analyzePsiFile(file, true)
             }
             "Rust" -> {
                 // Используем наш ручной парсер для элементов типа "FUNCTION"
                 val rustProjectAnalyzer = RustProjectAnalyzer()
-                val pairList = rustProjectAnalyzer.findRustFunctionRanges(file)
+                return rustProjectAnalyzer.analyzePsiFile(file, true)
+                //val pairList = rustProjectAnalyzer.findRustFunctionRanges(file)
                 //element_list.forEach().joinToString("\n") { it.content ?: "" }
                 //val result = element_list.joinToString("\n ", { (s, r) -> s + " " + r.toString() })
-                val result = pairList.joinToString(separator = "\n") { (text, range) ->
-                    "$text : $range"
-                    }
-                return result
+                //val result = pairList.joinToString(separator = "\n") { (text, range) ->
+                    //"$text : $range"
+                    //}
+                //return result
                 }
             }
 
         // Базовый поиск по PsiNamedElement
-        val rustProjectAnalyzer = RustProjectAnalyzer()
-        val universalElementList = rustProjectAnalyzer.getElementsToRefactor(file)
-        return universalElementList.joinToString { it.text }
+    //        val rustProjectAnalyzer = RustProjectAnalyzer()
+    //        val universalElementList = rustProjectAnalyzer.getElementsToRefactor(file)
+    //        return universalElementList.joinToString { it.text }
+        return file.name
     }
 
 }

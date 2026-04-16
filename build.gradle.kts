@@ -27,6 +27,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
+    implementation("org.xerial:sqlite-jdbc:3.45.2.0")
     intellijPlatform {
         intellijIdea(targetVersion)
         bundledPlugin("com.intellij.java")
