@@ -4,11 +4,8 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.wm.ToolWindowManager
-import com.jetbrains.rd.util.string.printToString
-import org.jetbrains.kotlin.idea.gradleTooling.get
 
-class Refactor: AnAction("Refactor", "Send/Find code block from project to refactor", com.intellij.icons.AllIcons.Actions.Search)  {
+class RefactorAction: AnAction("Refactor", "Send/Find code block from project to refactor", com.intellij.icons.AllIcons.Actions.ShowCode)  {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return

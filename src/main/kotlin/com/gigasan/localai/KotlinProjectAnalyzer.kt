@@ -1,13 +1,8 @@
 package com.gigasan.localai
 
-import com.intellij.openapi.project.Project
-import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.diagnostic.Logger
 
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.psi.PsiRecursiveElementWalkingVisitor
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiFile
 
 import org.jetbrains.kotlin.analysis.api.analyze
@@ -41,27 +36,27 @@ import org.jetbrains.kotlin.analysis.api.renderer.types.renderers.KaUnresolvedCl
 import org.jetbrains.kotlin.analysis.api.renderer.types.renderers.KaUsualClassTypeRenderer
 import org.jetbrains.kotlin.analysis.api.renderer.base.KaKeywordsRenderer
 import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.KaAnnotationRenderer
-import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.KaAnnotationRendererForSource
 import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.KaRendererAnnotationsFilter
+import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.renderers.KaAnnotationArgumentsRenderer
+import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.renderers.KaAnnotationListRenderer
 import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.renderers.KaAnnotationQualifierRenderer
 import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.renderers.KaAnnotationUseSiteTargetRenderer
 import org.jetbrains.kotlin.analysis.api.renderer.base.contextReceivers.KaContextReceiversRendererForSource
-import org.jetbrains.kotlin.config.AnalysisFlag
-import kotlin.collections.List
-
-private val LOG = Logger.getInstance("KotlinProjectAnalyzer")
+import org.jetbrains.kotlin.nj2k.getContainingClass
 
 
 // Kotlin
-class KotlinProjectAnalyzer {
+class KotlinProjectAnalyzer: ProjectAnalyzer {
+
+    private val logger = Logger.getInstance("KotlinProjectAnalyzer")
 
     @OptIn(KaExperimentalApi::class)
     private val kaAnnotationsRenderer = KaAnnotationRenderer {
-        annotationListRenderer = org.jetbrains.kotlin.analysis.api.renderer.base.annotations.renderers.KaAnnotationListRenderer.FOR_SOURCE
+        annotationListRenderer = KaAnnotationListRenderer.FOR_SOURCE
         annotationFilter = KaRendererAnnotationsFilter.NONE // Или .ALL, если нужны @Override/@Internal
         annotationsQualifiedNameRenderer = KaAnnotationQualifierRenderer.WITH_SHORT_NAMES
         annotationUseSiteTargetRenderer = KaAnnotationUseSiteTargetRenderer.WITH_NON_DEFAULT_USE_SITE
-        annotationArgumentsRenderer = org.jetbrains.kotlin.analysis.api.renderer.base.annotations.renderers.KaAnnotationArgumentsRenderer.IF_ANY
+        annotationArgumentsRenderer = KaAnnotationArgumentsRenderer.IF_ANY
     }
 
     @OptIn(KaExperimentalApi::class)
@@ -94,14 +89,73 @@ class KotlinProjectAnalyzer {
         keywordsRenderer = KaKeywordsRenderer.AS_WORD
     }.build()
 
-
-    fun analyzeKotlinPsiFile(file: PsiFile, analysis: Boolean): String {
-        val res = StringBuilder("Kotlin File: ${file.name}\n\n")
+    // for refactor
+    override fun psiFileToMemberChooserList(psiFile: PsiFile): List<UniversalMember> {
+        val result = mutableListOf<UniversalMember>()
 
         // Ищем все классы в файле
-        val classes = PsiTreeUtil.findChildrenOfType(file, KtClass::class.java)
+        val classes = PsiTreeUtil.findChildrenOfType(psiFile, KtClass::class.java)
+            for (ktClass in classes) {
+                //res.append(analyzeClassDetailed(ktClass))
 
-        if (analysis) {
+                val member = UniversalMember(
+                    element = ktClass,
+                    presentationName = ktClass.name.toString(),
+                    parentMember = null,
+                )
+                result.add(member)
+            }
+        return result
+
+
+
+
+//
+//
+////        val text = file.text
+////
+////        val filePath = file.virtualFile.path
+////        val fileId = db.getOrInsertFileId(filePath)
+////        val sourceText = file.text
+////
+////        // 0. ищем комментарии
+////        val comments = findComments(sourceText, file.name)
+//        logger.warn("psiFileToMemberChooserList fileName=${file.name} detected ${comments.size} comments")
+////        for (comment in comments) {
+////            val cont = RustCodeDatabase.CommentResult(
+////                text = comment.text,
+////                isDoc = comment.isDoc,
+////                range = comment.range,
+////            )
+////            db.insertComment(fileId, cont)
+////        }
+//
+//        logger.warn("psiFileToMemberChooserList fileName=${file.name} text.length=${sourceText.length}")
+//
+//        // 2. Ищем ВСЕ функции в файле
+////        val functions = parseFunctions(sourceText, sourceText, comments, file.name)
+////        logger.warn("psiFileToMemberChooserList fileName=${file.name} detected ${functions.size} functions")
+////
+////
+////        for (func in functions) {
+////            val element = file.findElementAt(func.fullRange.startOffset)
+////            if (element != null) {
+////                val parent = element.parent // Скорее всего это будет просто текстовый узел
+////                result.add(UniversalMember(parent, func.name))
+////            }
+////        }
+//
+//        return result
+    }
+
+    // for analyze
+    override fun analyzePsiFile(psiFile: PsiFile, deep: Boolean): String {
+        val res = StringBuilder("Kotlin File: ${psiFile.name}\n\n")
+
+        // Ищем все классы в файле
+        val classes = PsiTreeUtil.findChildrenOfType(psiFile, KtClass::class.java)
+
+        if (deep) {
             for (ktClass in classes) {
                 res.append(analyzeClassDetailed(ktClass))
             }
@@ -311,9 +365,9 @@ class KotlinProjectAnalyzer {
     }
 
     companion object {
-        fun log() {
-            LOG.info("Анализ завершен. Найдено файлов: ${0}")
-        }
+//        fun log() {
+//            logger.info("Анализ завершен. Найдено файлов: ${0}")
+//        }
     }
 }
 
