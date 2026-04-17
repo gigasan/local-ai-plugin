@@ -44,6 +44,7 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.ui.JBColor
+import com.intellij.util.ui.JBUI
 import com.vladsch.flexmark.html.HtmlRenderer
 import com.vladsch.flexmark.html.AttributeProvider
 import com.vladsch.flexmark.html.AttributeProviderFactory
@@ -51,9 +52,15 @@ import com.vladsch.flexmark.ast.FencedCodeBlock
 import com.vladsch.flexmark.html.renderer.AttributablePart
 import com.vladsch.flexmark.html.renderer.LinkResolverContext
 import com.vladsch.flexmark.parser.Parser
+import org.jetbrains.uast.kotlin.isKotlin
+import java.awt.event.ActionEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import kotlin.text.format
+import java.awt.FlowLayout
+import java.awt.Insets
+import java.awt.event.ComponentEvent
+import java.awt.event.ComponentAdapter
 
 //sealed class ChatBlock {
 //    data class Text(val value: String): ChatBlock()
@@ -83,6 +90,10 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         // Опционально: можно добавить тонкую рамку для отладки
         border = BorderFactory.createLineBorder(Color.GRAY)
     }
+
+    private lateinit var layeredPane: JLayeredPane
+    private lateinit var searchPanel: JPanel   // ← теперь поле
+    private var searchField: JTextField? = null
 
 //    private var animationStep = 0
     private val statusBarWidth = 30 // Желаемая ширина строки в символах
@@ -123,8 +134,50 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     init {
         instance = this
 
+        // === Инициализация JCEF ===
+        if (!JBCefApp.isSupported()) {
+            logger.error("JBCefApp is not supported!")
+            exitProcess(0)
+        }
+
+        // Создаём браузер (лучше здесь, а не в поле)
+        jbCefBrowser = JBCefBrowser()
+
+        // === LAYERED PANE ===
+        layeredPane = JLayeredPane().apply { layout = null }
+
         // === Основная структура панели ===
         val mainPanel = JPanel(BorderLayout())
+
+        layeredPane.add(mainPanel, JLayeredPane.DEFAULT_LAYER)
+
+        searchPanel = createSearchPanel(jbCefBrowser)
+        layeredPane.add(searchPanel, JLayeredPane.POPUP_LAYER)
+
+        layeredPane.setLayer(searchPanel, JLayeredPane.POPUP_LAYER)
+        layeredPane.moveToFront(searchPanel)
+
+        layeredPane.addComponentListener(object : ComponentAdapter() {
+            override fun componentResized(e: ComponentEvent) {
+                val w = layeredPane.width
+                val h = layeredPane.height
+                mainPanel.setBounds(0, 0, w, h)
+                updateSearchPanelPosition()
+                //searchPanel.setBounds(w - 240, 10, 220, 32)
+            }
+        })
+
+        // Принудительное начальное позиционирование
+        SwingUtilities.invokeLater {
+            updateSearchPanelPosition()
+            layeredPane.revalidate()
+            layeredPane.repaint()
+        }
+
+        installShortcuts(layeredPane, searchPanel)
+        searchPanel.isVisible = false
+
+        setContent(layeredPane)
 
         // Верхняя часть — браузер (чат)
         val chatPanel = JPanel(BorderLayout())
@@ -162,17 +215,9 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         mainPanel.add(chatPanel, BorderLayout.CENTER)
         mainPanel.add(southPanel, BorderLayout.SOUTH)
 
-        setContent(mainPanel)
+        //setContent(mainPanel)
 
-        // === Инициализация JCEF ===
-        if (!JBCefApp.isSupported()) {
-            logger.error("JBCefApp is not supported!")
-            exitProcess(0)
-        }
-
-        // Создаём браузер (лучше здесь, а не в поле)
-        jbCefBrowser = JBCefBrowser()
-
+        // === доинициализация JCEF ===
         // Убираем серую рамку (для отладки можно потом вернуть)
         browserWrapper.border = null
 
@@ -219,6 +264,19 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             })
 
         logger.info("ChatPanel initialized")
+    }
+
+    private fun updateSearchPanelPosition() {
+        if (!::layeredPane.isInitialized || !::searchPanel.isInitialized) return
+
+        val w = layeredPane.width
+        if (w > 320) {
+            // Правый верхний угол с небольшим отступом
+            searchPanel.setBounds(w - 310, 10, 290, 38)
+        } else {
+            // fallback для очень узкого окна
+            searchPanel.setBounds(10, 10, 290, 38)
+        }
     }
 
     override fun uiDataSnapshot(sink: DataSink) {
@@ -323,6 +381,136 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }, true)
         // Привязываем DropTarget к панели
         panel.dropTarget = dropTarget
+    }
+
+
+    fun createSearchPanel(browser: JBCefBrowser): JPanel {
+        val panel = JPanel(BorderLayout(4, 0)).apply {
+            isOpaque = true
+            preferredSize = Dimension(310, 38)
+            minimumSize = Dimension(260, 38)
+            border = BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Color.GRAY.adjustBrightness(0.3f), 1),
+                BorderFactory.createEmptyBorder(2, 4, 2, 4)
+            )
+        }
+
+        // Поле ввода — теперь реально растягивается
+        val field = JTextField(20).apply {
+            font = font.deriveFont(12f)
+        }
+
+        // Маленькие плоские кнопки
+        fun createSmallButton(text: String, action: () -> Unit): JButton {
+            return JButton(text).apply {
+                preferredSize = Dimension(26, 26)
+                margin = JBUI.emptyInsets()
+                isFocusPainted = false
+                isBorderPainted = false          // убираем рамку
+                isContentAreaFilled = false      // убираем фон при нажатии
+                font = font.deriveFont(12f)
+                addActionListener { action() }
+            }
+        }
+
+        val btnPrev = createSmallButton("↑") {
+            browser.cefBrowser.find(field.text, false, false, true)  // назад
+        }
+
+        val btnNext = createSmallButton("↓") {
+            browser.cefBrowser.find(field.text, true, false, true)   // вперёд
+        }
+
+        val btnClose = createSmallButton("\uD83D\uDDD9") {
+            browser.cefBrowser.stopFinding(true)
+            searchPanel.isVisible = false
+        }
+
+        // Панель с кнопками
+        val buttonsPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 2, 0)).apply {
+            isOpaque = false
+            add(btnPrev)
+            add(btnNext)
+            add(btnClose)
+        }
+
+        panel.add(field, BorderLayout.CENTER)
+        panel.add(buttonsPanel, BorderLayout.EAST)
+
+        // Сохраняем ссылку на поле, чтобы можно было заполнять текст из других мест
+        this.searchField = field   // ← добавь private var searchField: JTextField? = null в класс
+
+        return panel
+    }
+
+    private fun getSelectedTextFromEditor(): String? {
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return null
+        val selectionModel = editor.selectionModel
+        return if (selectionModel.hasSelection()) {
+            selectionModel.selectedText
+        } else null
+    }
+
+    fun installShortcuts(root: JComponent, searchPanel: JPanel) {
+        val im = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+        val am = root.getActionMap()
+
+        // Основные шорткаты
+        im.put(KeyStroke.getKeyStroke("control F"), "find")
+        im.put(KeyStroke.getKeyStroke("ESCAPE"), "hideFind")
+        im.put(KeyStroke.getKeyStroke("F3"), "findNext")
+        im.put(KeyStroke.getKeyStroke("shift F3"), "findPrev")
+
+        am.put("find", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                updateSearchPanelPosition()
+                searchPanel.isVisible = true
+                layeredPane.moveToFront(searchPanel)
+                searchPanel.revalidate()
+                searchPanel.repaint()
+                layeredPane.repaint()
+
+                // 1. Сначала пытаемся взять из редактора
+                val editorSelected = getSelectedTextFromEditor()
+
+                if (!editorSelected.isNullOrBlank()) {
+                    searchField?.text = editorSelected
+                    searchField?.selectAll()
+                    searchField?.requestFocusInWindow()
+                } else {
+                    // 2. Если ничего нет в редакторе — берём из браузера (чата)
+                    jbCefBrowser.cefBrowser.executeJavaScript("window.getChatSelection();", "", 0)
+                    // Результат придёт асинхронно в jsQuery.addHandler
+                }
+
+                logger.info("🔍 Search panel opened with text: '${searchField?.text}'")
+            }
+        })
+
+        am.put("hideFind", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                searchPanel.isVisible = false
+                jbCefBrowser.cefBrowser.stopFinding(true)
+
+                layeredPane.repaint()
+            }
+        })
+
+        am.put("findNext", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                searchField?.text?.let {
+                    if (it.isNotBlank()) jbCefBrowser.cefBrowser.find(it, true, false, true)
+                }
+            }
+        })
+
+        am.put("findPrev", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                searchField?.text?.let {
+                    if (it.isNotBlank()) jbCefBrowser.cefBrowser.find(it, false, false, true)
+                }
+            }
+        })
     }
 
     fun scheduleMarkdownUpdate() {
@@ -1140,19 +1328,25 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         jbCefBrowser.loadHTML(styledHtml)
 
         // Инжектим taskHandlers.js (лучше делать после loadHTML, а не сразу)
-        try {
-            val jsCode = this::class.java.getResource("/js/taskHandlers.js")?.readText()
-                ?: throw kotlinx.io.files.FileNotFoundException("taskHandlers.js not found in resources")
+//        try {
+//            val jsCode = this::class.java.getResource("/js/taskHandlers.js")?.readText()
+//                ?: throw kotlinx.io.files.FileNotFoundException("taskHandlers.js not found in resources")
+//
+//            // Генерируем реальный JS-код для моста
+//            val actualInject = jsQuery.inject("selection")
+//
+//            // Заменяем метку в тексте файла на рабочий код
+//            val finalJsCode = jsCode.replace("PLACEHOLDER_FOR_INJECT", actualInject)
+//
+//            // Небольшая задержка, чтобы DOM был готов
+//            SwingUtilities.invokeLater {
+//                jbCefBrowser.cefBrowser.executeJavaScript(finalJsCode, "", 0)
+//            }
+//        } catch (e: Exception) {
+//            logger.warn("Failed to load taskHandlers.js", e)
+//        }
 
-            // Небольшая задержка, чтобы DOM был готов
-            SwingUtilities.invokeLater {
-                jbCefBrowser.cefBrowser.executeJavaScript(jsCode, "", 0)
-            }
-        } catch (e: Exception) {
-            logger.warn("Failed to load taskHandlers.js", e)
-        }
-
-        scrollToBottom()
+ //       scrollToBottom()
     }
 
     fun loadResource(path: String): String {
@@ -1209,6 +1403,38 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         // 2. Обработка сообщений от JS
         jsQuery = JBCefJSQuery.create(jbCefBrowser)   // ← самый стабильный способ сейчас
+
+        //Best Practice
+        //        jsQuery.addHandler { arg ->
+        //            when {
+        //                arg.startsWith("click:") -> handleTaskClick(arg.removePrefix("click:"))
+        //                arg.startsWith("hover:") -> handleTaskHover(arg.removePrefix("hover:"))
+        //                arg == "hover:exit" -> handleHoverExit()
+        //                else -> handleTextSelection(arg) // Если ничего не подошло — значит это текст
+        //            }
+        //            JBCefJSQuery.Response("ok")
+        //        }
+
+        jsQuery.addHandler { queryResult: String ->
+            // Проверяем, что это НЕ команда для второго обработчика
+            val isCommand = queryResult.startsWith("click:") ||
+                    queryResult.startsWith("hover:") ||
+                    queryResult == "hover:exit"
+
+            if (!isCommand && queryResult.isNotBlank()) {
+                // Получили выделенный текст из браузера
+                SwingUtilities.invokeLater {
+                    searchField?.text = queryResult.trim()
+                    searchField?.selectAll()
+                    searchField?.requestFocusInWindow()
+
+                    // Сразу запускаем поиск (опционально — можно убрать, если хочешь только заполнить поле)
+                    jbCefBrowser.cefBrowser.find(queryResult.trim(), true, false, false)
+                }
+            }
+            null  // Даем пройти в handleJsQuery, если нужно
+        }
+
         jsQuery.addHandler(::handleJsQuery)
 
         // Добавляем LoadHandler (чтобы инжектить при перезагрузках страницы)
@@ -1220,6 +1446,28 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             }
         }
         jbCefBrowser.jbCefClient.addLoadHandler(loadHandler, cefBrowser)
+    }
+
+    private fun injectSelectionScript() {
+        val script = """
+        // Функция, которую будем вызывать из Java
+        window.getChatSelection = function() {
+            const selection = window.getSelection().toString().trim();
+            if (selection.length > 0) {
+                ${jsQuery.inject("selection")}   // отправляем текст в Java
+            }
+            return selection;
+        };
+
+        // Дополнительно: по двойному клику или Ctrl+C можно автоматически отправлять (по желанию)
+        document.addEventListener('mouseup', function() {
+            // Можно раскомментировать, если хочешь авто-заполнение при любом выделении
+            // setTimeout(() => window.getChatSelection(), 100);
+        });
+    """.trimIndent()
+
+        // Выполняем после загрузки страницы
+        jbCefBrowser.cefBrowser.executeJavaScript(script, "", 0)
     }
 
     // Функция для инъекции bridge + загрузки твоего JS
@@ -1246,7 +1494,12 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         // Потом загружаем твой taskHandlers.js (как строку)
         val taskHandlersJs = loadTaskHandlersJs()   // см. ниже
-        cefBrowser?.executeJavaScript(taskHandlersJs, null, 0)
+
+        // Заменяем метку в тексте файла на рабочий код
+        val actualInject = jsQuery.inject("selection")
+        val finalJsCode = taskHandlersJs.replace("PLACEHOLDER_FOR_INJECT", actualInject)
+
+        cefBrowser?.executeJavaScript(finalJsCode, null, 0)
 
         val scrollFixScript = """
     (function() {
