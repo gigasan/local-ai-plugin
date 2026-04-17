@@ -1,4 +1,7 @@
 // taskHandlers.js — чистый JS, без всяких inject
+/**
+ * 1. Обработка событий для элементов <summary>
+ */
 (function() {
     const boundSummaries = new WeakSet();
 
@@ -40,3 +43,19 @@
         initObserver();
     }
 })();
+
+/**
+ * 2. Работа с выделением текста (Selection)
+ */
+window.getChatSelection = function() {
+    const selection = window.getSelection().toString().trim();
+    if (selection.length > 0) {
+        // Вместо ошибки вставляем метку для замены
+        PLACEHOLDER_FOR_INJECT
+    }
+    return selection;
+};
+
+document.addEventListener('mouseup', function() {
+    setTimeout(() => window.getChatSelection(), 100);
+});
