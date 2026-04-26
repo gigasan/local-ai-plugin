@@ -1,13 +1,15 @@
 package com.gigasan.ai.runtime
 
-import com.gigasan.ai.config.DefaultChatConfigProvider
-import com.gigasan.ai.config.PluginSettings
+import com.gigasan.ai.config.PluginConfigProvider
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.Strictness
 import com.google.gson.stream.JsonReader
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -22,16 +24,17 @@ import org.intellij.markdown.html.URI
 import java.io.StringReader
 import java.net.HttpURLConnection
 
-object LocalAIService {
-    private val LOG = Logger.getInstance("LocalAIService")
+@Service(Service.Level.PROJECT)
+class LocalAIService(private val project: Project) {
+    private val provider = project.service<PluginConfigProvider>()
+    private val logger = Logger.getInstance("LocalAIService")
+
 // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
-
-
 
     /**
      * 🔥 УНИВЕРСАЛЬНЫЙ ПАРСЕР — работает со всеми известными форматами:
-     * 1. /v1/chat/completions (choices)
-     * 2. Старый LM Studio /api/v1/chat (output + content как строка)
+     * 1. Старый LM Studio /api/v1/chat (output + content как строка)
+     * 2. /v1/chat/completions (choices)
      * 3. Новый /v1/responses (output + content как массив + output_text)
      */
     private fun parseResponse(jsonResponse: String): String {
@@ -138,8 +141,7 @@ object LocalAIService {
 
         return try {
 
-            val provider = DefaultChatConfigProvider(PluginSettings.instance)
-            val chatFull = provider.buildChatUrl()
+            val chatFull = provider.buildUrl() + provider.buildChatEndpoint()
             val requestBody = provider.buildRequestBody(prompt)
 
             val url = URI.create(chatFull).toURL()
@@ -155,7 +157,7 @@ object LocalAIService {
 
             // Отправка тела
             val jsonBody = Gson().toJson(requestBody)
-            LOG.info("json body: $jsonBody")
+            logger.info("json body: $jsonBody")
             conn.outputStream.use {
                 it.write(jsonBody.toByteArray(Charsets.UTF_8))
             }
@@ -168,7 +170,7 @@ object LocalAIService {
 
             // Чтение ответа
             val jsonResponse = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-            LOG.info("jsonResponse: $jsonResponse")
+            logger.info("jsonResponse: $jsonResponse")
 
             // 🔥 Парсинг по структуре JSON (без флагов!)
             var responseText = parseResponse(jsonResponse)

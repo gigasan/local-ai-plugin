@@ -141,11 +141,11 @@ object HtmlProcessor {
 
     fun insertReasoning(reasoning: String): String {
         return """
-<details style="margin-top:8px;">
-<summary>Размышления 🗨️</summary>
-<div class="reasoning">${reasoning}</div>
-</details>
-""".trimIndent()
+            <details style="margin-top:8px;">
+            <summary>Размышления 🗨️</summary>
+            <div class="reasoning">${reasoning}</div>
+            </details>
+        """.trimIndent()
     }
 
 

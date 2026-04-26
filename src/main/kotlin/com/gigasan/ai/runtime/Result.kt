@@ -30,19 +30,19 @@ data class Usage(
 
 // Common type
 @Serializable
-data class AIResult(
+data class Result(
     val text: String,
     val usage: Usage? = null,
     val model: String? = null,
     val reasoning: String? = null,
-    val toolCalls: List<AIToolCall> = emptyList(),
+    val toolCalls: List<ToolCall> = emptyList(),
     val raw: String,
     val durationMs: Long? = null,
     val response_id: String? = null,
 )
 
 @Serializable
-data class AIToolCall(
+data class ToolCall(
     val name: String,
     //val arguments: Map<String, Any>
     //val arguments: JsonObject
@@ -127,9 +127,6 @@ data class OllamaMessage(
 
 
 
-
-
-
 // Универсальный парсер (чистый и красивый)
 object AIResponseParser {
 
@@ -138,7 +135,8 @@ object AIResponseParser {
         isLenient = true
     }
 
-    fun parse(raw: String): AIResult {
+    fun parse(raw: String): Result {
+        logger.info("AIResponseParser parse raw.length=${raw.length}")
         val element = json.parseToJsonElement(raw)
         val obj = element.jsonObject
 
@@ -152,7 +150,8 @@ object AIResponseParser {
     }
 
     // ------------------------
-    private fun parseLMStudioResponses(raw: String): AIResult {
+    private fun parseLMStudioResponses(raw: String): Result {
+
         /*
         LM Studio
         2026-04-11 03:57:51  [INFO]
@@ -196,7 +195,7 @@ object AIResponseParser {
             ?.content
             ?: ""
 
-        return AIResult(
+        return Result(
             text = text,
             usage = Usage(
                 inputTokens = parsed.stats?.input_tokens,
@@ -212,10 +211,10 @@ object AIResponseParser {
         )
     }
 
-    private fun parseOpenAIResponses(raw: String): AIResult {
-        /*
+    private fun parseOpenAIResponses(raw: String): Result {
 
-        2026-04-11 16:46:07,415 [ 180534]   WARN - ChatPanel - toolResult = AIResult(text=, usage=Usage(inputTokens=4, outputTokens=286, totalTokens=290, reasoning_tokens=null, tokens_per_second=null, time_to_first_token_seconds=null), model=deepseek/deepseek-r1-0528-qwen3-8b, reasoning=null, toolCalls=[], raw={
+        /* OpenAI
+        2026-04-11 16:46:07,415 [ 180534]   WARN - ChatPanel - toolResult = Result(text=, usage=Usage(inputTokens=4, outputTokens=286, totalTokens=290, reasoning_tokens=null, tokens_per_second=null, time_to_first_token_seconds=null), model=deepseek/deepseek-r1-0528-qwen3-8b, reasoning=null, toolCalls=[], raw={
         "id": "resp_ff25d8688c963978c66bde115b31395cbd60265108722204",
         "object": "response",
         "created_at": 1775915152,
@@ -295,8 +294,6 @@ object AIResponseParser {
 
         */
 
-
-
         val element = json.parseToJsonElement(raw)
         val obj = element.jsonObject
 
@@ -321,7 +318,7 @@ object AIResponseParser {
             ?.joinToString("") { it.text ?: "" }
             ?: ""
 
-        return AIResult(
+        return Result(
             text = text,
             usage = Usage(
                 inputTokens = parsed.usage?.inputTokens,
@@ -337,7 +334,7 @@ object AIResponseParser {
 
         /*
 
-            return AIResult(
+            return Result(
             text = text,
             usage = Usage(
                 inputTokens = parsed.stats?.input_tokens,
@@ -356,7 +353,7 @@ object AIResponseParser {
 
     }
 
-    private fun parseChatCompletion(raw: String): AIResult {
+    private fun parseChatCompletion(raw: String): Result {
         val parsed = json.decodeFromString<ChatCompletionResponse>(raw)
 
         val text = parsed.choices
@@ -365,7 +362,7 @@ object AIResponseParser {
             ?.content
             ?: ""
 
-        return AIResult(
+        return Result(
             text = text,
             usage = parsed.usage,
             model = parsed.model,
@@ -373,22 +370,22 @@ object AIResponseParser {
         )
     }
 
-    private fun parseOllama(raw: String): AIResult {
+    private fun parseOllama(raw: String): Result {
         val parsed = json.decodeFromString<OllamaResponse>(raw)
 
         val text = parsed.response
             ?: parsed.message?.content
             ?: ""
 
-        return AIResult(
+        return Result(
             text = text,
             model = parsed.model,
             raw = raw
         )
     }
 
-    private fun fallback(raw: String): AIResult {
-        return AIResult(
+    private fun fallback(raw: String): Result {
+        return Result(
             text = raw,
             raw = raw
         )
@@ -409,36 +406,34 @@ object AIResponseParser {
 
 }
 
+
+
+/*
 @Serializable
-data class ToolCallItem(
-    val name: String,
-    //val arguments: JsonObject
-    val arguments: Map<String, JsonElement>
+data class LMStudioDelta(
+    val type: String,
+    val content: String? = null,           // для дельт
+    val progress: Double? = null,          // для prompt_processing
+    val model_instance_id: String? = null, // для chat.start
+    val result: LMStudioResponse? = null   // для chat.end
 )
 
 @Serializable
-data class ToolCallsResponse(
-    val tool_calls: List<ToolCallItem> = emptyList()
+data class Error(
+    val type: String,
+    val message: String,
+    val code: String,
+    val param: String,
 )
 
-object ToolCallParser {
+@Serializable
+data class AIStats(
+    val input_tokens: Int,
+    val total_output_tokens: Int,
+    val tokens_per_second: Double
+)
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-    }
+@Serializable
+data class LMEvent(val type: String, val progress: Double? = null)
 
-    fun parse(raw: String): List<AIToolCall> {
-
-        val parsed = json.decodeFromString<ToolCallsResponse>(raw)
-        val result = parsed.tool_calls.map {
-            AIToolCall(
-                name = it.name,
-                arguments = it.arguments
-            )
-        }
-        return result
-    }
-
-}
-
+*/

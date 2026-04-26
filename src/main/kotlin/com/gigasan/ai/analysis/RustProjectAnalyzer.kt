@@ -1,6 +1,9 @@
 package com.gigasan.ai.analysis
 
+import com.gigasan.ai.analysis.RustCodeDatabase
+import com.gigasan.ai.core.toHumanReadableSize
 import com.gigasan.ai.core.toIntRange
+import com.gigasan.ai.core.wrapCode
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.codeInsight.generation.ClassMember
@@ -11,36 +14,45 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.ui.SimpleColoredComponent
 import javax.swing.JTree
 import com.intellij.codeInspection.options.OptMultiSelector.OptElement
+import com.intellij.icons.AllIcons
 import com.intellij.lang.Language
 import com.intellij.psi.PsiManager
 import com.intellij.psi.impl.light.LightElement
 import kotlin.sequences.forEach
 
-class RustProjectAnalyzer(): ProjectAnalyzer {
-    private val db = RustCodeDatabase("RustProjectAnalyzer")
+class RustProjectAnalyzer(): ProjectAnalyzer, ProjectRefactor {
+    private val db = RustCodeDatabase.getInstance("RustProjectAnalyzer")
     private val logger = Logger.getInstance("RustProjectAnalyzer")
 
+    // УБРАЛИ db.clearData() из init — он больше не нужен здесь
     init {
-        db.clearData()
+        logger.info("RustProjectAnalyzer initialized (singleton DB connected)")
     }
 
-    // for analyze
-    override fun analyzePsiFile(psiFile: PsiFile, deep: Boolean): String {
-//        val res = StringBuilder()
-        val res = StringBuilder("Rust File: ${psiFile.name}\n\n")
-//        logger.warn("analyzePsiFile: $psiFile")
+    // ============ ProjectAnalyzer implementation ============
 
-        val rustRawBlocks = parseRustManually(psiFile)
-        //logger.warn("analyzePsiFile: rustRawBlocks=${rustRawBlocks.size}\n\n")
-        for (rawBlock in rustRawBlocks) {
-            res.append("type: " + rawBlock.type).append("\n")
-            res.append("name: " + rawBlock.header).append("\n")
-            res.append("length: " + rawBlock.range.length).append("\n")
-            res.append("range: " + rawBlock.range).append("\n")
-            res.append("functions: " + rawBlock.functions).append("\n")
+    override fun analyzePsiFile(psiFile: PsiFile, deep: Boolean): String {
+        val res = StringBuilder("Dense report of Rust file: ${psiFile.name}\n")
+
+        // Парсим (твой существующий ручной парсер)
+        val filePath = psiFile.virtualFile.path
+        val fileId = db.getOrInsertFileId(filePath)
+        db.clearFileData(fileId)   // очищаем старое
+        parseRustManually(psiFile, fileId)
+
+        // Получаем готовый dense-отчёт из БД
+        val codeRes = db.buildDenseReport(fileId, deep)   // ← твоя инстанция RustCodeDatabase
+        //db.debugPrintFileContent(fileId)
+        if (codeRes.length == 0) {
+            return res.append("no data\n").toString()
         }
 
-        return res.toString()
+        // Те же метрики, что и в Kotlin-версии
+        res.append(" -plain=${psiFile.text.length}\n")
+        res.append(" -dense=${codeRes.length}\n")
+        //res.append(" -fileId=$fileId\n\n")   // ← добавь для отладки
+        // Оборачиваем в код-блок с языком rust (чтобы подсветка работала)
+        return res.append(wrapCode(codeRes.toString(), "rust")).toString()
     }
 
     data class CommentBlock(
@@ -55,7 +67,7 @@ class RustProjectAnalyzer(): ProjectAnalyzer {
         val pattern = Regex("""(//.*|/\*[\s\S]*?\*/)""")
 
         pattern.findAll(text).forEach { match ->
-            val isDoc = match.value.startsWith("///") || match.value.startsWith("/**") || match.value.startsWith("```")
+            val isDoc = match.value.startsWith("///") || match.value.startsWith("/**")
             comments.add(CommentBlock(match.value, isDoc, match.range))
         }
         return comments
@@ -227,8 +239,8 @@ class RustProjectAnalyzer(): ProjectAnalyzer {
                 functions.add(function)
             }
 
-            logger.warn("parseRustManually fileName=${fileName} function lenght=${fnEnd - fnStart} name=${function.name} header=${function.header} range=${fnStart}-${fnEnd}")
-
+            logger.warn("parseRustManually fileName=${fileName} function lenght=${fnEnd - fnStart} name=${function.name} header=${function.header} range=${fnStart}-${fnEnd} ${sourceText.substring(fnStart, fnStart+10)}..${sourceText.substring(fnEnd-10, fnEnd)}")
+            
             functions.add(function)
         }
         return functions
@@ -251,14 +263,14 @@ class RustProjectAnalyzer(): ProjectAnalyzer {
         return cleanText
     }
 
-    fun parseRustManually(file: PsiFile): List<RustRawBlock> {
-        val filePath = file.virtualFile.path
-        val fileId = db.getOrInsertFileId(filePath)
+    fun parseRustManually(file: PsiFile, fileId: Int) {
         val sourceText = file.text
         val blocks = mutableListOf<RustRawBlock>()
         val moduleLevelFunctions = mutableListOf<RustRawFunction>()
         logger.warn("parseRustManually fileName=${file.name} text.length=${sourceText.length}")
 
+        // ← Добавь этот лог
+        logger.info("Before insert - checking current functions for fileId=$fileId")
 
         // 0. ищем комментарии
         val comments = findComments(sourceText, file.name)
@@ -296,6 +308,8 @@ class RustProjectAnalyzer(): ProjectAnalyzer {
         val functions = parseFunctions(parsingText, sourceText, comments, file.name)
         logger.warn("parseRustManually fileName=${file.name} detected ${functions.size} functions")
 
+        // После парсинга, перед вставкой
+        logger.warn("detected ${functions.size} functions (will insert after clear)")
         // 3. Распределяем функции
         for (fn in functions) {
             // Ищем, не лежит ли начало функции внутри какого-то контейнера
@@ -313,6 +327,7 @@ class RustProjectAnalyzer(): ProjectAnalyzer {
                     )
                     db.insertFunction(fileId, parent.id, func)
             } else {
+
                 // Свободная функция (module-level)
                 val func = RustCodeDatabase.FunctionResult(
                     name = fn.name,
@@ -322,15 +337,12 @@ class RustProjectAnalyzer(): ProjectAnalyzer {
                     range = fn.fullRange.toIntRange(),
                     isTest = fn.isTest,
                 )
-                db.insertFunction(fileId, 0, func)
+                db.insertFunction(fileId, null, func)
                 moduleLevelFunctions.add(fn)
             }
         }
 
         logger.warn("parseRustManually fileName=${file.name} detected ${moduleLevelFunctions.size} moduleLevelFunctions")
-
-        return blocks
-
     }
 
     fun findFunctionBodyStart(text: String, startOffset: Int): Int {
@@ -392,8 +404,8 @@ class RustProjectAnalyzer(): ProjectAnalyzer {
         return startOffset
     }
 
-    // for refactor
-    override fun psiFileToMemberChooserList(psiFile: PsiFile): List<UniversalMember> {
+    // ============ ProjectRefactor implementation ============
+    override fun psiFileToMemberChooserList(header: MemberChooserObject, psiFile: PsiFile): List<UniversalMember> {
         val result = mutableListOf<UniversalMember>()
         val text = psiFile.text
 
@@ -416,19 +428,40 @@ class RustProjectAnalyzer(): ProjectAnalyzer {
         logger.warn("psiFileToMemberChooserList fileName=${psiFile.name} text.length=${sourceText.length}")
 
         // 2. Ищем ВСЕ функции в файле
-        val functions = parseFunctions(sourceText, sourceText, comments, psiFile.name)
+        val funcHeader = SimpleGroupHeader("Functions")
+
+        val functions = parseFunctions(sourceText, sourceText, comments, psiFile.name, false)
         logger.warn("psiFileToMemberChooserList fileName=${psiFile.name} detected ${functions.size} functions")
 
-
         for (func in functions) {
-            val element = psiFile.findElementAt(func.fullRange.startOffset)
-            if (element != null) {
-                val parent = element.parent // Скорее всего это будет просто текстовый узел
-                result.add(UniversalMember(parent, func.name))
-            }
+            val anchor = psiFile.findElementAt(func.fullRange.startOffset) ?: psiFile
+            //val element = psiFile.findElementAt(func.fullRange.startOffset)
+            result.add(UniversalMember(
+                anchorElement = anchor,
+                presentationName = func.name,
+                rawContent = func.raw, // Текст всей функции уже здесь!
+                parentHeader = funcHeader,
+                icon = AllIcons.Nodes.Function
+            ))
+                //result.add(UniversalMember(parent, func.name, funcHeader))
+
         }
 
         return result
+    }
+
+    override fun rawFileToMemberChooserList(header: MemberChooserObject, psiFile: PsiFile): List<UniversalMember> {
+        // Создаем один элемент, где PSI-элементом выступает сам файл.
+        // Это позволит getText() вернуть всё содержимое файла целиком.
+        val fileMember = UniversalMember(
+            anchorElement = psiFile,
+            presentationName = "Plain text (${psiFile.text.length.toLong().toHumanReadableSize()})",
+            rawContent = psiFile.text,
+            header,
+            AllIcons.Nodes.Unknown
+        )
+
+        return listOf(fileMember)
     }
 
 //    Rust реализация - требует rust plugin с библиотеками RsStructItem RsImplItem RsFunction

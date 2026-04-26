@@ -1,8 +1,14 @@
 package com.gigasan.ai.ui.chat
 
-import com.gigasan.ai.config.DefaultChatConfigProvider
+import com.gigasan.ai.actions.AnalyzeAction
+import com.gigasan.ai.actions.AskAction
+import com.gigasan.ai.actions.AutoSearchToggleAction
+import com.gigasan.ai.actions.CleanChatAction
+import com.gigasan.ai.actions.RefactorAction
+import com.gigasan.ai.actions.SendFileAction
+import com.gigasan.ai.config.PluginConfigProvider
 import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.runtime.AIClientStream
+import com.gigasan.ai.runtime.ClientStream
 import com.gigasan.ai.runtime.AIMetrics
 import com.gigasan.ai.runtime.BackendAdapter
 import com.gigasan.ai.runtime.ChatRequestBuilder
@@ -14,9 +20,14 @@ import com.gigasan.ai.runtime.StateManager
 import com.gigasan.ai.runtime.StreamEvent
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.actionSystem.DataSink
+import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -52,15 +63,15 @@ import com.vladsch.flexmark.ast.FencedCodeBlock
 import com.vladsch.flexmark.html.renderer.AttributablePart
 import com.vladsch.flexmark.html.renderer.LinkResolverContext
 import com.vladsch.flexmark.parser.Parser
-import org.jetbrains.uast.kotlin.isKotlin
 import java.awt.event.ActionEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import kotlin.text.format
 import java.awt.FlowLayout
-import java.awt.Insets
 import java.awt.event.ComponentEvent
 import java.awt.event.ComponentAdapter
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.AnAction
 
 //sealed class ChatBlock {
 //    data class Text(val value: String): ChatBlock()
@@ -77,6 +88,7 @@ import java.awt.event.ComponentAdapter
 //)
 
 class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true), Disposable {
+    private val provider get() = project.service<PluginConfigProvider>()
     private var updateTimer: Timer? = null
     private var jbCefBrowser = JBCefBrowser() // или через builder, если нужно
     // 2. Создаём jsQuery ТОЛЬКО после того, как браузер полностью создан
@@ -96,12 +108,12 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private var searchField: JTextField? = null
 
 //    private var animationStep = 0
-    private val statusBarWidth = 30 // Желаемая ширина строки в символах
-    private var lastUpdateMs = 0L
+    //private val statusBarWidth = 30 // Желаемая ширина строки в символах
+    //private var lastUpdateMs = 0L
     private var marqueeOffset = 0L
     private var lastTextLength = 0
     private var lastAnimationMs = 0L
-
+    private var isAutoSearchEnabled = false
 
     //private val chatBlocks = mutableListOf<ChatBlock>()
     private val inputField = JTextField()
@@ -110,14 +122,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private val logger = Logger.getInstance("ChatPanel")
 
     companion object {
-        fun buildTaskFromString(text: String): TaskData {
+        fun buildTaskFromString(text: String, request: String): TaskData {
             val task = TaskData(
                 id = System.currentTimeMillis().toString(),
                 title = "✏️",
                 //description = "chat message",
                 content = text,
                 zoneType = "Chat",
-                request = "",
+                request = request,
                 answer = "",
                 status = TaskStatus.CREATED,
                 reasoning = "",
@@ -130,6 +142,73 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         val CHAT_BROWSER_KEY = DataKey.create<JBCefBrowser>("ChatCefBrowser")
     }
+
+    private fun createChatToolbar(): JComponent {
+        val actionManager = ActionManager.getInstance()
+
+        // 1. Создаем основную группу экшенов
+        val mainGroup = DefaultActionGroup()
+
+        mainGroup.add(Separator.getInstance()) // Визуальный разделитель
+
+        // 3. Условная загрузка экшенов из настроек
+        val settings = PluginSettings.instance // Предполагаю, что это синглтон/сервис
+
+        if (settings.state.enableDebugFeature) {
+            mainGroup.add(AskAction())
+        }
+        if (settings.state.enableFileTransfer) {
+            mainGroup.add(SendFileAction())
+        }
+        if (settings.state.enableRefactoring) {
+            mainGroup.add(RefactorAction())
+        }
+        if (settings.state.enableCodeAnalysis) {
+            mainGroup.add(AnalyzeAction())
+        }
+        if (settings.state.enableCleanChat) {
+            mainGroup.add(CleanChatAction())
+        }
+        if (settings.state.enableAutoSearch) {
+            mainGroup.add(AutoSearchToggleAction { enabled ->
+            isAutoSearchEnabled = enabled
+            })
+        }
+
+        // Добавляем DevTools, если включено
+        if (settings.state.enableDevToolsAction) {
+            val devToolsAction = object : AnAction("DevTools", "Open DevTools", AllIcons.General.Web) {
+                override fun actionPerformed(e: AnActionEvent) {
+                    // Используем поиск по компонентам, если DataKey не сработает
+                    val browser = e.getData(ChatPanel.CHAT_BROWSER_KEY)
+                    browser?.cefBrowser?.openDevTools()
+                }
+            }
+            mainGroup.add(devToolsAction)
+        }
+
+        // 4. Добавляем стандартные экшены в конец
+//        mainGroup.addSeparator()
+//        val clearAction = actionManager.getAction("LocalAI.ClearChat")
+//        if (clearAction != null) {
+//            mainGroup.add(clearAction)
+//        }
+
+        // 5. Создаем итоговый Toolbar
+        val toolbar = actionManager.createActionToolbar(
+            "ChatPanelToolbar",
+            mainGroup,
+            true // Горизонтальный
+        )
+
+
+
+        // Привязываем события к текущей панели
+        toolbar.targetComponent = this
+
+        return toolbar.component
+    }
+
 
     init {
         instance = this
@@ -178,6 +257,9 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         searchPanel.isVisible = false
 
         setContent(layeredPane)
+
+        val toolbarComponent = createChatToolbar()
+        setToolbar(toolbarComponent) // Устанавливаем в слот SimpleToolWindowPanel
 
         // Верхняя часть — браузер (чат)
         val chatPanel = JPanel(BorderLayout())
@@ -534,6 +616,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             request = task.request,
             content = task.content,
             status = task.status,
+            maxLen = 100
         )
 
         var data_task_id = "data-task-id='${task.id}'"
@@ -588,13 +671,12 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
 
     fun sendTask(task: TaskData) {
-
-        val provider = DefaultChatConfigProvider(PluginSettings.instance)
-        val url = provider.buildChatUrl()
+        val url = provider.buildUrl() + provider.buildChatEndpoint()
         val model = provider.buildChatModel()
 
         val clientOk = HttpClientProvider.client
-        val requestOk = LocalAIService.createRequest(url, model, "Write a short bedtime story about a unicorn.")
+        val localAIService = LocalAIService(project)
+        val requestOk = localAIService.createRequest(url, model, "Write a short bedtime story about a unicorn.")
         val responseOk = clientOk.newCall(requestOk).execute()
         println(responseOk.body?.string())
 
@@ -655,28 +737,24 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
     fun processTask(task: TaskData, indicator: ProgressIndicator): TaskResult {
         return try {
-            val provider = DefaultChatConfigProvider(PluginSettings.instance)
             val model = provider.buildChatModel()
-            val url = provider.buildChatUrl()
-            val backend = provider.buildBackend()
-            val apiKey = "sk-lm-zESagiFt:J3TSJCffvecSKvcx4Fym"
             logger.info("task = $task")
             logger.info("model = $model")
             val request = "${task.request} ${task.content}".trimIndent()
-            val chatContext = ChatRequestBuilder()
-                .system("You are IntelliJ assistant")
+            val chatContext = ChatRequestBuilder(project)
+                .system(provider.buildSystem())
                 .memory(limit = 5)
                 .user(request)
-                .stream(true)
+                .stream(provider.buildStream())
                 .model(model)
                 .maxTokens(provider.buildMaxTokenLimit())
                 .build(task)
             logger.warn("chatContext = $chatContext")
             val stateManager = StateManager()
             val stateMachine = StateMachine()
-            val adapter = BackendAdapter()
+            val adapter = BackendAdapter(project)
             val http = HttpClientProvider.client
-            val aiClientStream = AIClientStream(
+            val clientStream = ClientStream(
                 adapter = adapter,
                 http = http,
                 stateManager = stateManager,
@@ -684,7 +762,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             )
             //val toolClient = ToolOrchestrator(AIClientPost()) // url, api and backend from PluginSettings
             val startTime = System.currentTimeMillis()
-            val aiResult = aiClientStream.execute(chatContext, indicator) { event ->
+            val aiResult = clientStream.execute(project, chatContext, indicator) { event ->
                 onStreamEvent(event, indicator)
             }
 
@@ -762,7 +840,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private fun sendMessage() {
         val mainText = inputField.text.trim()
         if (mainText.isEmpty()) return
-        val task = buildTaskFromString(mainText)
+        val task = buildTaskFromString(mainText, "")
         inputField.text = ""
 
         taskManagerPanel.addTask(task)
@@ -823,9 +901,21 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         updateTaskOnUI(task)
     }
 
+    fun cleanAllTasks() {
+        val tasks = taskManagerPanel.getAllTasks()
+        try {
+            for (task in tasks.reversed()) {
+                taskManagerPanel.removeTask(task.id)
+            }
+            taskManagerPanel.onTasksChanged?.invoke()
+        } catch (e: Exception) {
+            
+        }
+    }
 
-    fun sendExternalMessage(text: String) {
-        val task = buildTaskFromString(text)
+
+    fun sendExternalMessage(text: String, request: String = "") {
+        val task = buildTaskFromString(text, request)
         logger.info("task=${task}")
         taskManagerPanel.addTask(task)
         updateTaskStatus(task, TaskStatus.SENDING)
@@ -932,7 +1022,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         val html = tasks.joinToString("\n\n") { task ->
             buildTaskHtml(task)
         }
-        logger.info("html=$html")
+        //logger.info("html=$html")
 
 
         // scan plain text for language
@@ -947,7 +1037,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         val languages = regex.findAll(allText)
             .map { it.groupValues[1] }
             .toSet()
-        logger.info("languages=$languages")
+        //logger.info("languages=$languages")
 
         // LANGUAGES <PRISM>
         val deps = mapOf(
@@ -1235,13 +1325,19 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     padding-left: 12px;
                 }
             
-                summary {
+                summary { /* заголовок чата со статусом */
                     cursor: pointer;
                     padding: 6px 10px;
                     background-color: rgba(255, 255, 255, 0.03);
-                    border-radius: 10px 10px 10px 10px;
-                    font-weight: 500;
+                    border-radius: 10px;
+                    font-weight: 400;
                     color: #d1d3d9;
+                
+                    /* Новые свойства для фиксации в одну строку */
+                    white-space: nowrap;      /* Запрещает перенос строки */
+                    overflow: hidden;         /* Скрывает текст, выходящий за пределы */
+                    text-overflow: ellipsis;  /* Добавляет троеточие в конце (...) */
+                    display: list-item;       /* Важно сохранить для работы стрелочки раскрытия */
                 }
                 
                 .chat-header {
@@ -1416,6 +1512,8 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         //        }
 
         jsQuery.addHandler { queryResult: String ->
+            if (!isAutoSearchEnabled) return@addHandler null
+
             // Проверяем, что это НЕ команда для второго обработчика
             val isCommand = queryResult.startsWith("click:") ||
                     queryResult.startsWith("hover:") ||
@@ -1430,6 +1528,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
                     // Сразу запускаем поиск (опционально — можно убрать, если хочешь только заполнить поле)
                     jbCefBrowser.cefBrowser.find(queryResult.trim(), true, false, false)
+                    searchPanel.isVisible = true
                 }
             }
             null  // Даем пройти в handleJsQuery, если нужно

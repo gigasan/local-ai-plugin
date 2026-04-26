@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 val targetVersion = providers.gradleProperty("targetVersion")
     .getOrElse("2026.1")   // версия по умолчанию
 
@@ -24,7 +26,10 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:3.0.1")
     implementation("io.ktor:ktor-client-content-negotiation:3.0.1")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.1")
+    implementation("com.aallam.openai:openai-client:4.1.0")
+    implementation("com.anthropic:anthropic-java-client-okhttp:2.27.0") // Verify latest version
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3") // Kotlin Coroutines for async API calls
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
     implementation("org.xerial:sqlite-jdbc:3.45.2.0")
@@ -40,9 +45,9 @@ dependencies {
 
 intellijPlatform {
     pluginConfiguration {
-        name = "Local AI Chat"
-        version = "0.4.0"
-        description = "AI-чат с поддержкой Kotlin и Rust"
+        //name = "Local AI Chat"
+        //version = "0.4.0"
+        //description = "AI-чат с поддержкой Kotlin и Rust"
         ideaVersion {
             sinceBuild = "253"      // с 2025.3.2 и новее
             untilBuild = "261.*"    // до 2026.1 включительно
@@ -64,4 +69,8 @@ tasks {
     buildPlugin {
         // архив будет build\distributions\local-ai-plugin.zip
     }
+}
+val compileKotlin: KotlinCompile by tasks
+compileKotlin.compilerOptions {
+    freeCompilerArgs.set(listOf("-Xannotation-default-target=param-property"))
 }

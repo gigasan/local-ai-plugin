@@ -1,13 +1,13 @@
 package com.gigasan.ai.ui
 
-import com.gigasan.ai.analysis.UniversalMember
-import com.gigasan.ai.analysis.RustProjectAnalyzer
+import com.gigasan.ai.analysis.FileHeader
 import com.gigasan.ai.analysis.KotlinProjectAnalyzer
+import com.gigasan.ai.analysis.RustProjectAnalyzer
+import com.gigasan.ai.analysis.UniversalMember
 import com.gigasan.ai.core.projectHasKotlinSource
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.codeInsight.generation.PsiMethodMember
 import com.intellij.icons.AllIcons
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.util.MemberChooser
 import com.intellij.ide.util.TreeClassChooserFactory
 import com.intellij.ide.util.TreeFileChooser
@@ -19,7 +19,8 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.extensions.PluginId
+import com.intellij.openapi.editor.event.DocumentEvent
+import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileTypes.FileType
@@ -33,9 +34,14 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.ui.LanguageTextField
 import com.intellij.ui.OnePixelSplitter
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
+import org.jetbrains.annotations.NotNull
+import org.jetbrains.kotlin.lombok.utils.capitalize
 import java.awt.BorderLayout
 import java.awt.Dimension
+import javax.swing.JPanel
+import javax.swing.JLabel
 import javax.swing.JComponent
 import javax.swing.ScrollPaneConstants
 import javax.swing.SwingConstants
@@ -45,13 +51,17 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
 
     private lateinit var taskField: LanguageTextField
     private lateinit var codeTextField: LanguageTextField
+
+//    private lateinit var codeLen: JBLabel
+//    private lateinit var codeLen: JBLabel
+
     private val logger = Logger.getInstance("RefactorDialog")
     private val splitter = OnePixelSplitter(false, 0.3f) // вертикальный, 30% слева
     private var language: String? = null
 
 
     init {
-        title = "AI Refactoring Preparation"
+        title = "RefactorDialog AI Refactoring Preparation"
         setOKButtonText("Send to AI")
         logger.info("initialized")
         init()
@@ -59,13 +69,19 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
 
     override fun createCenterPanel(): JComponent {
 
+
+
         // === ПАНЕЛЬ (текстовое задание) ===
         taskField = LanguageTextField(Language.findLanguageByID("TEXT"), project, "", false)
 
         taskField.addSettingsProvider { editor ->
+            //editor.settings.setRightMargin(editor.calculateVisibleRange().end)
             editor.settings.isLineNumbersShown = true
             editor.settings.isCaretRowShown = true
-
+            editor.settings.isUseSoftWraps = true
+            editor.colorsScheme.editorFontName = "JetBrains Mono"
+            editor.colorsScheme.editorFontSize = 14
+            
             editor.scrollPane.apply {
                 verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
                 horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
@@ -75,14 +91,33 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
             }
         }
 
+        val statsLabel = JLabel("0 символов • 0 слов")
+
+
+
         // === ПАНЕЛЬ (Исходный код) ===
-        codeTextField = LanguageTextField(Language.findLanguageByID("kotlin"), project, "", false)
+        //codeTextField = LanguageTextField(Language.findLanguageByID("Markdown"), project, "", false)
+        codeTextField = LanguageTextField(Language.findLanguageByID("TEXT"), project, "", false)
+
+        val editor = codeTextField.getEditor()
+        if (editor != null) {
+            editor.getDocument().addDocumentListener(object : DocumentListener {
+                public override fun documentChanged(@NotNull event: DocumentEvent) {
+                    val text: String = event.document.text
+                    val length = text.length
+
+                    println("Символов: $length")
+                }
+            })
+        }
 
         codeTextField.addSettingsProvider { editor ->
             editor.settings.isLineNumbersShown = true
             editor.settings.isIndentGuidesShown = true
             editor.settings.isFoldingOutlineShown = false
             editor.settings.isCaretRowShown = true
+            editor.colorsScheme.editorFontName = "JetBrains Mono"
+            editor.colorsScheme.editorFontSize = 14
 
             // ← Всё управление скроллом теперь здесь (встроенный scrollPane редактора)
             editor.scrollPane.apply {
@@ -94,6 +129,20 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
             }
         }
 
+        codeTextField.document.addDocumentListener(object : DocumentListener {
+            override fun documentChanged(event: DocumentEvent) {
+                val text = event.document.text
+
+                val chars = text.length
+                val words = text.trim().takeIf { it.isNotEmpty() }
+                    ?.split("\\s+".toRegex())
+                    ?.size ?: 0
+
+                statsLabel.text = "$chars символов • $words слов"
+            }
+        })
+
+
         val leftPanel = JBPanel<JBPanel<*>>(BorderLayout())   // обёртка для единообразия
         leftPanel.add(taskField, BorderLayout.CENTER)
 
@@ -101,6 +150,7 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
         val toolbar = createCodeToolbar()
         rightPanel.add(toolbar, BorderLayout.NORTH)
         rightPanel.add(codeTextField, BorderLayout.CENTER)   // ← без внешнего JBScrollPane!
+        rightPanel.add(statsLabel, BorderLayout.SOUTH)
 
 
         // === SPLITTER ===
@@ -132,64 +182,49 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
         return vcsManager.getVcsRootObjectFor(file)?.path
     }
 
+    // Обнови createCodeToolbar — добавь новую кнопку
     private fun createCodeToolbar(): JComponent {
         val actionGroup = DefaultActionGroup()
 
+        // === ТВОИ СУЩЕСТВУЮЩИЕ КНОПКИ ===
         val fileImportCodeAction = object : AnAction(
-            "TreeFileChooserFactory Import Code",
-            "Select class or function from project",
-            AllIcons.Actions.ShowCode
+            "Import File", "Import file from project", AllIcons.Actions.ShowCode
         ) {
             override fun actionPerformed(e: AnActionEvent) {
                 codeTextField.text += openProjectFileMemberChooser() + "\n"
-                //codeTextField.text + "\n"
             }
         }
         actionGroup.add(fileImportCodeAction)
 
-        if (PluginManagerCore.isPluginInstalled(PluginId.getId("com.intellij.java"))) {
-            // использовать TreeClassChooserFactory
-
-
-        val classImportCodeAction = object : AnAction(
-            "TreeClassChooserFactory Import Code",
-            "Select class or function from project",
-            AllIcons.Actions.AddMulticaret
+        val cleanCodeAction = object : AnAction(
+            "Clean",
+            "Clean code area",
+            AllIcons.General.Delete
         ) {
             override fun actionPerformed(e: AnActionEvent) {
-                //codeTextField.text += openProjectClassMemberChooser().toString() + "\n"
-
-                AiFileChooserDialog(
-                    project,
-                    getGitRoot(project) ?: project.baseDir,
-                ) { file, action ->
-
-                    when (action) {
-                        //"open" -> openFile(file)
-
-                        //"explain" -> callLLM("Explain this file:\n${file.name}")
-
-                        //"refactor" -> callLLM("Refactor this code:\n${read(file)}")
-
-                        //"tests" -> callLLM("Generate tests for:\n${read(file)}")
-                    }
-                }.show()
-
+                codeTextField.text = ""
             }
         }
-
-        actionGroup.add(classImportCodeAction)
-
+        actionGroup.add(cleanCodeAction)
 
 
-        } else {
-            // fallback UI
-        }
+        // === НОВАЯ КНОПКА — АНАЛИЗ ПРОЕКТА ===
+//        val analyzeProjectAction = object : AnAction(
+//            "Analyze Full Project",
+//            "Run analysis of all project files",
+//            AllIcons.Actions.DependencyAnalyzer
+//        ) {
+//            override fun actionPerformed(e: AnActionEvent) {
+//                startProjectAnalysis()
+//            }
+//        }
+//        actionGroup.add(analyzeProjectAction)
+
+        // ... (твой classImportCodeAction если нужен)
 
         val toolbar = ActionManager.getInstance()
             .createActionToolbar("RefactorDialogToolbar", actionGroup, true)
 
-        // ← КРИТИЧНО ИСПРАВЛЕНО
         toolbar.orientation = SwingConstants.HORIZONTAL
         toolbar.targetComponent = codeTextField
 
@@ -234,9 +269,9 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
         }
 
         val extensions = if (isKotlin) {
-            listOf("kt", "java", "js", "kts", "xml", "css", "html", "txt", "svg")
+            listOf("kt", "java", "js", "kts", "xml", "css", "html", "txt", "svg", "json", "md")
         } else {
-            listOf("rs", "toml", "txt", "mtl", "obj")
+            listOf("rs", "toml", "txt", "mtl", "obj", "ron", "xml", "json", "md")
         }
 
         if (isKotlin) {
@@ -254,7 +289,7 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
 
         val chooser = TreeFileChooserFactory.getInstance(project)
             .createFileChooser(
-                "Select file",
+                "TreeFileChooserFactory Select file",
                 null as PsiFile?,
                 null as FileType?,
                 object : TreeFileChooser.PsiFileFilter {
@@ -285,20 +320,25 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
 
         val selectedFile = chooser.selectedFile ?: return ""
         logger.info("Selected file: ${selectedFile.name}")
+        val selectedExt = selectedFile.virtualFile.extension ?: return ""
+        logger.info("Selected ext: $selectedExt")
 
-        //val projectAnalyzer = RustProjectAnalyzer()
-
+        val header = FileHeader(selectedFile)
         // 2. Теперь, когда файл есть, парсим его содержимое вручную
-        val members:List<UniversalMember> = projectAnalyzer.psiFileToMemberChooserList(selectedFile)
+        val members:List<UniversalMember> = if (selectedExt == extensions[0]) {
+            projectAnalyzer.psiFileToMemberChooserList(header, selectedFile)
+        } else {
+            projectAnalyzer.rawFileToMemberChooserList(header, selectedFile)
+        }
 
         if (members.isEmpty()) return ""
 
         // Передаем список напрямую (members уже реализуют ClassMember)
         val memberChooser = MemberChooser(members.toTypedArray(), true, true, project)
-        memberChooser.title = "Select Rust/Kotlin Elements"
+        memberChooser.title = "Select ${language?:"".capitalize()} Elements"
 
-
-        if (memberChooser.showAndGet()) {
+        memberChooser.show()
+        if (memberChooser.selectedElements?.isNotEmpty() == true) {
             val isCopyJavaDoc = memberChooser.isCopyJavadoc
             val isAnn = memberChooser.isInsertOverrideAnnotation
             val selectedElements = memberChooser.selectedElements
@@ -308,7 +348,6 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
         }
         return ""
     }
-
 
     private fun openProjectClassMemberChooser() {
         logger.info("openProjectMemberChooserAuto Opening File Chooser for Rust/Kotlin")
@@ -358,20 +397,9 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
 
     override fun doOKAction() {
         super.doOKAction()
-        // Здесь можно добавить логику при нажатии OK
-        ChatPanel.instance?.sendExternalMessage(wrapCodeBlock(taskField.text, codeTextField.text, language))
-    }
-
-    fun wrapCodeBlock(text: String, code: String, language: String?=null): String {
-        val lang = language?:"text"
-        val result = """
-$text
-```$lang
-$code
-```
-""".trimIndent()
-        logger.info("codeBlock: $result")
-        return result
+        ChatPanel.instance?.sendExternalMessage(codeTextField.text, taskField.text)
+            //wrapCodeBlock(taskField.text, codeTextField.text, language)
+        //)
     }
 
     override fun doCancelAction() {

@@ -1,83 +1,143 @@
 package com.gigasan.ai.actions
 
+import com.intellij.openapi.ui.Messages
 import com.gigasan.ai.analysis.KotlinProjectAnalyzer
 import com.gigasan.ai.analysis.RustProjectAnalyzer
-import com.gigasan.ai.analysis.UniversalMember
+import com.gigasan.ai.config.PluginSettings
+import com.gigasan.ai.config.ProjectSpecificSettings
 import com.gigasan.ai.core.projectHasKotlinSource
-import com.gigasan.ai.ui.chat.ChatPanel
+import com.gigasan.ai.ui.RefactorDialog
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
-import com.intellij.openapi.roots.ProjectRootManager
-import com.intellij.psi.PsiElement
+import com.intellij.openapi.wm.WindowManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
-import com.intellij.psi.PsiRecursiveElementWalkingVisitor
+import org.jetbrains.kotlin.idea.facet.getInstance
 
-class AnalyzeAction: AnAction("Analyze Project", "Scan Project files for AI context", AllIcons.Actions.DependencyAnalyzer) {
-
+class AnalyzeAction : AnAction("Analyze Project", "Scan project and open refactor dialog", AllIcons.Actions.DependencyAnalyzer) {
     private val logger = Logger.getInstance("AnalyzeAction")
-
+    private val settings = PluginSettings()
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
 
-        // Запускаем в фоновом режиме, чтобы не было фризов и Exception
+        runProjectAnalysisAndOpenDialog(project)
+    }
+    override fun update(e: AnActionEvent) {
+        val project = e.project ?: run {
+            e.presentation.isEnabledAndVisible = false
+            return
+        }
+        val state = ProjectSpecificSettings.getInstance(project).state
+        val model = state.selectedModelName
+//        val dynamicText = if (model.isNotBlank()) {
+//            "Refactor with Local AI ($model)"
+//        } else {
+//            "Refactor with Local AI (No model selected)"
+//        }
+//        e.presentation.setText(dynamicText)
+        // Можно также выключать кнопку, если модель не выбрана
+        e.presentation.isEnabled = model.isNotBlank()
+        e.presentation.isEnabledAndVisible = settings.state.enableCodeAnalysis
+    }
+    private fun runProjectAnalysisAndOpenDialog(project: Project) {
+        val isKotlin = projectHasKotlinSource(project)
+        val extensions = if (isKotlin) listOf("kt") else listOf("rs")
+
+        // Создаём анализатор **один раз** снаружи
+        val projectAnalyzer = if (isKotlin) {
+            KotlinProjectAnalyzer()
+        } else {
+            RustProjectAnalyzer()
+        }
+
         ProgressManager.getInstance().run(
-            object : Task.Backgroundable(project, "AI is mapping your project...") {
+            object : Task.Backgroundable(project, "AI Project Analysis", true) {
+
+                private val summary = StringBuilder()
+
                 override fun run(indicator: ProgressIndicator) {
-                    // Читать PSI можно только в Read Action
-                    ApplicationManager.getApplication().runReadAction {
-                        try {
-                            val isKotlin = projectHasKotlinSource(project)
-                            val projectAnalyzer = if (isKotlin) {
-                                KotlinProjectAnalyzer()
-                            } else {
-                                RustProjectAnalyzer()
-                            }
+                    indicator.isIndeterminate = false
+                    indicator.fraction = 0.0
+                    indicator.text = "Collecting project files..."
 
-                            val extensions = if (isKotlin) {
-                                listOf("kt")
-                            } else {
-                                listOf("rs")
-                            }
-                            logger.warn("isKotlin=$isKotlin")
-                            val projectPsiFiles = getProjectPsiFiles(project, extensions)
-                            val projectSummary = StringBuilder()
+                    val projectPsiFiles = ApplicationManager.getApplication().runReadAction<List<PsiFile>> {
+                        getProjectPsiFiles(project, extensions)
+                    }
 
-                            logger.warn("Start Project alanyze=${project.name}")
-                            projectPsiFiles.forEach { psiFile ->
-                                // метод анализа для каждого файла
-                                //val lang = identifyContext(psiFile)
-                                logger.warn("Start File alanyze=${psiFile.name}")
-                                projectSummary.append(projectAnalyzer.analyzePsiFile(psiFile, true) + "\n\n")
-                            }
-
-                            // Вывод результата (возвращаемся в UI поток)
-                            ApplicationManager.getApplication().invokeLater {
-                                logger.warn("Project analysis complete!")
-                                ChatPanel.instance?.sendExternalMessage(projectSummary.toString())
-                                // К примеру, покажем уведомление
-                                //com.intellij.openapi.ui.Messages.showInfoMessage(
-                                //    project,
-                                //    "Found classes: \n${projectMap.take(500)}...", // берем кусочек для превью
-                                //    "Analysis Result"
-                                //)
-                            }
-                        } catch (ex: Exception) {
-                            ex.printStackTrace()
+                    if (projectPsiFiles.isEmpty()) {
+                        ApplicationManager.getApplication().invokeLater {
+                            Messages.showInfoMessage(project, "No source files found", "Analysis")
                         }
+                        return
+                    }
+
+                    val total = projectPsiFiles.size
+                    summary.append("=== FULL PROJECT ANALYSIS ===\n")
+                    summary.append("Project: ${project.name}\n")
+                    summary.append("Files analyzed: $total\n")
+                    summary.append("\n")
+                    var totalLength: Long = 0
+                    var denseLength: Long = 0
+                    projectPsiFiles.forEachIndexed { index, psiFile ->
+                        if (indicator.isCanceled) throw ProcessCanceledException()
+
+                        val progress = (index + 1.0) / total
+                        indicator.fraction = progress
+                        indicator.text = "Analyzing ${psiFile.name} (${index + 1}/$total)"
+
+                        totalLength += psiFile.virtualFile.length
+                        val fileResult: String = ApplicationManager.getApplication().runReadAction<String> {
+                            val dense = projectAnalyzer.analyzePsiFile(psiFile, deep = false)
+                            denseLength += dense.length
+                            dense
+                        }
+
+                        summary.append(fileResult.ifBlank { "// No output from ${psiFile.name}" })
+                        summary.append("\n")
+                    }
+                }
+
+                override fun onSuccess() {
+                    ApplicationManager.getApplication().invokeLater {
+                        openRefactorDialogWithResult(project, summary.toString())
+                    }
+                }
+
+                override fun onCancel() {
+                    ApplicationManager.getApplication().invokeLater {
+                        WindowManager.getInstance().getStatusBar(project)?.info ="Analysis cancelled"
+                    }
+                }
+
+                override fun onThrowable(error: Throwable) {
+                    logger.error("Analysis failed", error)
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showErrorDialog(project, "Analysis failed: ${error.message}", "Error")
                     }
                 }
             }
         )
     }
+
+    private fun openRefactorDialogWithResult(project: Project, analysisResult: String) {
+        val dialog = RefactorDialog(project)
+        dialog.setTask("Насколько глубоко тебе понятен этот проект? Есть ли не понятные артефакты?")
+        dialog.setCode(analysisResult)           // ← вставляем результат анализа
+
+        dialog.showAndGet()
+    }
+
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 
     fun getProjectPsiFiles(project: Project, extensions: List<String>): List<PsiFile> {
         val resultList = mutableListOf<PsiFile>()
@@ -104,76 +164,4 @@ class AnalyzeAction: AnAction("Analyze Project", "Scan Project files for AI cont
         return resultList
     }
 
-
-    fun getProjectMap(project: Project, extensions: List<String>): String {
-        val map = StringBuilder()
-        val psiManager = PsiManager.getInstance(project)
-
-        // Индекс всех файлов в проекте
-        ProjectFileIndex.getInstance(project).iterateContent { virtualFile ->
-            // Проверяем расширение
-
-            for (ext in extensions) {
-                if (virtualFile.extension == ext) {
-                    // Превращаем VirtualFile в PsiFile
-                    val psiFile = psiManager.findFile(virtualFile)
-
-                    if (psiFile != null) {
-                        map.append("\nFile: ${psiFile.name}\n")
-
-                        // Вот теперь можно запустить Visitor внутри конкретного файла
-                        psiFile.accept(object : PsiRecursiveElementWalkingVisitor() {
-                            override fun visitElement(element: PsiElement) {
-                                super.visitElement(element)
-                                // Тут будем вытаскивать классы и методы позже
-//                                map.append(
-//                                    analyzePsiFile(
-//                                        element.containingFile,
-//                                        analysis = false
-//                                    )
-//                                )
-
-                            }
-                        })
-                    }
-                }
-            }
-            true // Продолжать обход следующего файла
-        }
-        return map.toString()
-    }
-
-    fun identifyContext(file: PsiFile): String {
-        val language = file.language.id // Возвратит "Kotlin", "Rust", "JAVA" и т.д.
-        val virtualFile = file.virtualFile
-        logger.info("language=$language")
-
-        when (language) {
-            "Kotlin" -> {
-                // Ищем KtNamedFunction, KtClass
-                val kotlinProjectAnalyzer = KotlinProjectAnalyzer()
-                return kotlinProjectAnalyzer.analyzePsiFile(file, true)
-            }
-            "Rust" -> {
-                // Используем наш ручной парсер для элементов типа "FUNCTION"
-                val rustProjectAnalyzer = RustProjectAnalyzer()
-                return rustProjectAnalyzer.analyzePsiFile(file, true)
-                //val pairList = rustProjectAnalyzer.findRustFunctionRanges(file)
-                //element_list.forEach().joinToString("\n") { it.content ?: "" }
-                //val result = element_list.joinToString("\n ", { (s, r) -> s + " " + r.toString() })
-                //val result = pairList.joinToString(separator = "\n") { (text, range) ->
-                    //"$text : $range"
-                    //}
-                //return result
-                }
-            }
-
-        // Базовый поиск по PsiNamedElement
-    //        val rustProjectAnalyzer = RustProjectAnalyzer()
-    //        val universalElementList = rustProjectAnalyzer.getElementsToRefactor(file)
-    //        return universalElementList.joinToString { it.text }
-        return file.name
-    }
-
 }
-

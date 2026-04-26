@@ -1,0 +1,31 @@
+package com.gigasan.ai.actions
+
+import com.gigasan.ai.config.PluginSettings
+import com.gigasan.ai.config.ProjectSpecificSettings
+import com.gigasan.ai.ui.chat.ChatPanel
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionUpdateThread
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.diagnostic.Logger
+
+class CleanChatAction : AnAction("Clean Chat", "Remove all chats", AllIcons.Actions.ClearCash) {
+    private val logger = Logger.getInstance("CleanChatAction")
+    private val settings = PluginSettings()
+
+    override fun actionPerformed(e: AnActionEvent) {
+        ChatPanel.instance?.cleanAllTasks()
+    }
+
+    override fun update(e: AnActionEvent) {
+        val project = e.project ?: run {
+            e.presentation.isEnabledAndVisible = false
+            return
+        }
+        e.presentation.isEnabledAndVisible = settings.state.enableCleanChat
+    }
+
+    override fun getActionUpdateThread(): ActionUpdateThread {
+        return ActionUpdateThread.EDT
+    }
+}

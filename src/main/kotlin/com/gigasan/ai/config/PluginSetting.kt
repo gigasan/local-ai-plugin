@@ -4,91 +4,58 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.*
 
 // 1. Указываем имя файла, в котором будут лежать настройки (в папке конфигов IDE)
-@State(
-    name = "com.gigasan.localai.config.PluginSettings",
-    storages = [Storage("LocalAISettings.xml")]
-)
-@Service(Service.Level.APP) // Для современных версий платформы
+@State(name = "com.gigasan.localai.config.PluginSettings", storages = [Storage("LocalAISettings.xml")])
+@Service(Service.Level.APP)
 class PluginSettings : PersistentStateComponent<PluginSettings.State> {
 
-    private val listeners = mutableListOf<() -> Unit>()
-
-    // 2. Создаем вложенный класс для хранения данных
-    // Все поля здесь должны быть var, чтобы сериализатор мог их записать
     data class State(
-        var selectedModelKey: String = "",
-        var selectedModelName: String = "",
-        var baseUrl: String = "http://127.0.0.1:11434",  // общий базовый адрес // 11434 - ollama, 1234 - LM studio
-        var chatEndpointIndex: Int = 1, // 0 = /api/v1/chat, 1 = /v1/responses, 2 = /v1/chat/completions, 3 = custom.
-        var chatEndpoint: String = "",
-        var modelListEndpointIndex: Int = 1, // 0 = /api/v1/models, 1 = /v1/models, 2 = custom
-        var modelListEndpoint: String = "",
-        var apiKey: String = "",
-        var backendIndex: Int = 1,
-        var contextSize: Int = 8192,
-        var maxTokenLimit: Int = 2000,
+        // project modules
+        var enableChat: Boolean = true,
+
+        // toolbar actions
+        var enableDebugFeature: Boolean = true,
+        var enableFileTransfer: Boolean = true,
+        var enableRefactoring: Boolean = false,
+        var enableCodeAnalysis: Boolean = false,
+        var enableCleanChat: Boolean = true,
+        var enableAutoSearch: Boolean = true,
+        var enableSettingsAction: Boolean = true,
+        var enableDevToolsAction: Boolean = false,
+
+        // backends
+        var allowedBackendEndpoints: Set<BackendEndpoints> = setOf(
+            BackendEndpoints.LM_STUDIO_ENDPOINT,
+            BackendEndpoints.LM_STUDIO_OPENAI_ENDPOINT,
+            //BackendEndpoints.LM_STUDIO_ANTHROPIC_ENDPOINT,
+            BackendEndpoints.OLLAMA_ENDPOINT,
+            BackendEndpoints.OLLAMA_OPENAI_ENDPOINT,
+            //BackendEndpoints.OLLAMA_ANTHROPIC_ENDPOINT,
+        ),
     )
 
-    private var myState = State()
+    var myState = State() // Доступ к полям будет через settings.state.baseUrl
+
+    override fun getState(): State = myState
+    override fun loadState(state: State) { this.myState = state }
+
+    // 3. Для удобства доступа из Configurable можно добавить публичное свойство
+    // но с другим именем, либо использовать методы getState()
+    val allSettings: State get() = myState
+
+    private val listeners = mutableListOf<() -> Unit>()
 
     fun addChangeListener(listener: () -> Unit) {
         listeners.add(listener)
     }
 
     fun notifyChange() {
+        ApplicationManager.getApplication().messageBus
+            .syncPublisher(SettingsChangeListener.TOPIC)
+            .settingsChanged()
         listeners.forEach { it() }
     }
 
-    // 3. Реализуем методы интерфейса
-    override fun getState(): State = myState
-
-    override fun loadState(state: State) {
-        myState = state
-    }
-
-    // Удобные геттеры/сеттеры для остального кода
-    var selectedModelKey: String
-        get() = myState.selectedModelKey
-        set(value) { myState.selectedModelKey = value }
-
-    var apiKey: String
-        get() = myState.apiKey
-        set(value) { myState.apiKey = value }
-
-    var maxTokenLimit: Int
-        get() = myState.maxTokenLimit
-        set(value) { myState.maxTokenLimit = value }
-
-    var backendIndex: Int
-        get() = myState.backendIndex
-        set(value) { myState.backendIndex = value }
-
-    var selectedModelName: String
-        get() = myState.selectedModelName
-        set(value) { myState.selectedModelName = value }
-
-    var baseUrl: String
-        get() = myState.baseUrl
-        set(value) { myState.baseUrl = value }
-
-    var chatEndpointIndex: Int
-        get() = myState.chatEndpointIndex
-        set(value) { myState.chatEndpointIndex = value }
-
-    var chatEndpoint: String
-        get() = myState.chatEndpoint
-        set(value) { myState.chatEndpoint = value }
-
-    var modelListEndpointIndex: Int
-        get() = myState.modelListEndpointIndex
-        set(value) { myState.modelListEndpointIndex = value }
-
-    var modelListEndpoint: String
-        get() = myState.modelListEndpoint
-        set(value) { myState.modelListEndpoint = value }
-
     companion object {
-        val instance: PluginSettings
-            get() = ApplicationManager.getApplication().getService(PluginSettings::class.java)
+        val instance: PluginSettings get() = service()
     }
 }

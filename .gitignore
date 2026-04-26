@@ -20,7 +20,7 @@ gradle-app.setting
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
 
-
+*.png
 .idea/
 .intellijPlatform/
 gradle/
@@ -31,3 +31,6 @@ gradlew
 *.pdf
 src/main/rust/
 libs/
+tmp/
+temp/
+json_logs/
