@@ -1,22 +1,38 @@
 package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.PluginSettings
+import com.gigasan.ai.config.ProjectSpecificSettings
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.diagnostic.Logger
 
 class AskAction : AnAction("Ask", "Ask local AI", AllIcons.General.Balloon) {
+    private val logger = Logger.getInstance("SendFileAction")
+    private val settings = PluginSettings()
 
     override fun actionPerformed(e: AnActionEvent) {
         ChatPanel.instance?.sendExternalMessage("Привет. Напиши простую программу на python")
     }
 
     override fun update(e: AnActionEvent) {
-        val model = PluginSettings.instance.selectedModelName
-        val dynamicText = "Ask Local AI ($model)"
+        val project = e.project ?: run {
+            e.presentation.isEnabledAndVisible = false
+            return
+        }
+        val state = ProjectSpecificSettings.getInstance(project).state
+        val model = state.selectedModelName
+        val dynamicText = if (model.isNotBlank()) {
+            "Ask Local AI ($model)"
+        } else {
+            "Ask Local AI (No model selected)"
+        }
         e.presentation.setText(dynamicText)
+        // Можно также выключать кнопку, если модель не выбрана
+        e.presentation.isEnabled = model.isNotBlank()
+        e.presentation.isEnabledAndVisible = settings.state.enableDebugFeature
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread {

@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.gigasan.ai</id>
     <name>Local AI Chat</name>
-    <version>0.3.0</version>
+    <version>0.5.0</version>
     <vendor email="chernenko79@gmail.com">GigaSan</vendor>
 
     <description>
@@ -25,12 +25,14 @@
     <depends optional="true" config-file="com.gigasan.ai-withRust.xml">org.rust.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <projectService
+                serviceInterface="com.gigasan.ai.config.PluginConfigProvider"
+                serviceImplementation="com.gigasan.ai.config.DefaultChatConfigProvider"/>
         <applicationService serviceImplementation="com.gigasan.ai.config.PluginSettings"/>
         <projectConfigurable
             instance="com.gigasan.ai.config.PluginSettingsConfigurable"
             displayName="Local AI Chat Settings"
             id="LocalAI.Settings"/>
-
         <toolWindow
             id="Local AI Chat"
             factoryClass="com.gigasan.ai.ui.chat.ChatToolWindowFactory"
@@ -63,7 +65,6 @@
                 description="Refactor whole project">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
-
     </actions>
 
     <applicationListeners>

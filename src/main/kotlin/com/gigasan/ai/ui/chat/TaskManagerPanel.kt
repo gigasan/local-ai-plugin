@@ -135,13 +135,13 @@ class TaskManagerPanel : JPanel() {
         if (index >= 0) {
             tasksPanel.remove(index)
             taskList.removeAt(index)
-            tasksPanel.revalidate()
-            tasksPanel.repaint()
+            //tasksPanel.revalidate()
+            //tasksPanel.repaint()
             onTasksChanged?.invoke()
         }
     }
 
-    private fun createTaskPanel(task: TaskData): JPanel {
+    private fun createTaskPanel(task: TaskData, visible: Boolean=false): JPanel {
         val panel = JPanel(BorderLayout())
         panel.border = BorderFactory.createLineBorder(Color.GRAY, 1)
         //panel.preferredSize = Dimension(0, 40) // фиксируем только высоту
@@ -229,6 +229,10 @@ class TaskManagerPanel : JPanel() {
         wrapper.add(buttonsPanel, BorderLayout.NORTH)
 
         panel.add(wrapper, BorderLayout.EAST)
+
+        if (!visible) {
+            panel.hide()
+        }
 
         return panel
     }

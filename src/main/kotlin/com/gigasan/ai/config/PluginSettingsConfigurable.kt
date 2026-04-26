@@ -1,152 +1,255 @@
 package com.gigasan.ai.config
 
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.diagnostic.Logger
+//import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.ui.ComboBox
-import com.intellij.ui.components.JBLabel
-import com.intellij.util.ui.AsyncProcessIcon
-import com.intellij.util.ui.FormBuilder
+import com.intellij.openapi.ui.DialogPanel
+//import com.intellij.util.ui.FormBuilder
 import com.jetbrains.rd.util.URI
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.awt.BorderLayout
-import java.awt.CardLayout
 import java.net.HttpURLConnection
-import javax.swing.Box
-import javax.swing.JComponent
-import javax.swing.JPanel
-import javax.swing.JTextField
-import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
+import com.intellij.openapi.project.Project
+import com.intellij.ui.MutableCollectionComboBoxModel
+import com.intellij.openapi.options.BoundConfigurable
+import com.intellij.ui.dsl.builder.*
+import com.intellij.ui.dsl.builder.bindItem
+import java.util.Locale.getDefault
+import com.gigasan.ai.core.JsonFileLogger
 
-class PluginSettingsConfigurable : Configurable {
-    private val cardLayout = CardLayout()
-    private val mainPanel = JPanel(cardLayout)
+//import com.intellij.ui.dsl.builder.collapsibleGroup
+//import com.intellij.ui.dsl.builder.comboBox
 
-    // Создаем панели один раз
-    private val loadingPanel = JPanel(BorderLayout())
-    private val contentPanel = JPanel(BorderLayout())
+data class BackendItem(val backend: BackendEngine) {
+    override fun toString(): String = backend.displayName  // для старых моделей
+}
 
-    private val baseUrl = JTextField()
-    private val apiKey = JTextField()
-    private val maxTokenLimit = JTextField()
-
+class PluginSettingsConfigurable(private val project: Project) : BoundConfigurable("Local AI Settings"), JsonFileLogger {
+    private val global = PluginSettings.instance.state
+    private val settings = ProjectSpecificSettings.getInstance(project)
     private val modelComboBox = ComboBox<String>()
     private val modelsList = mutableListOf<Model>()
-
-    private val backends = listOf(
-        "LmStudioLegacy",
-        "Responses",
-        "ChatCompletions",
-    )
-    private var backendsComboBox = ComboBox(backends.toTypedArray())
-
-    private val chatEndpoints = listOf(
-        "/api/v1/chat",
-        "/v1/responses",
-        "/v1/chat/completions",
-        "Custom..."
-    )
-
-    private var chatEndpointsComboBox = ComboBox(chatEndpoints.toTypedArray())
-    private val chatCustomEndpoint = JTextField()
-
-    private val modelListEndpoints = listOf(
-        "/api/v1/models",
-        "/v1/models",
-        "Custom..."
-    )
-    private var modelListEndpointComboBox = ComboBox(modelListEndpoints.toTypedArray())
-
-    private val modelListCustomEndpoint = JTextField()
-
-    private val modelListCustomPanel = JPanel(BorderLayout()).apply {
-        add(JBLabel("Model list custom endpoint:"), BorderLayout.WEST)
-        add(modelListCustomEndpoint, BorderLayout.CENTER)
-    }
-    private val chatCustomPanel = JPanel(BorderLayout()).apply {
-        add(JBLabel("Chat custom endpoint:"), BorderLayout.WEST)
-        add(chatCustomEndpoint, BorderLayout.CENTER)
-    }
 
     @Volatile
     private var isLoading = true
 
-    data class Model(val key: String, val displayName: String)
+    private val logger = Logger.getInstance("PluginSettingsConfigurable")
+
+    val availableBackendEndpoints = BackendEndpoints.entries.filter { type ->
+        type == BackendEndpoints.LM_STUDIO_ENDPOINT || global.allowedBackendEndpoints.contains(type)
+    }
+
+    // Храним модели, чтобы обновлять их динамически
+    private val modelsModel = MutableCollectionComboBoxModel<String>()
+    private val chatModel = MutableCollectionComboBoxModel<String>()
+    private val urlModel = MutableCollectionComboBoxModel<String>()
+
+    private lateinit var modelsCombo: com.intellij.openapi.ui.ComboBox<String>
+    private lateinit var chatCombo: com.intellij.openapi.ui.ComboBox<String>
+    private lateinit var urlCombo: com.intellij.openapi.ui.ComboBox<String>
+
+    private fun updateDependentCombos(backendEngine: BackendEngine, backendApi: BackendApi) {
+
+        val backendEndpoint = BackendEndpoints.fromId(backendEngine.id, backendApi.id)?: BackendEndpoints.LM_STUDIO_ENDPOINT
+        //val currentBackend = BackendEngine.fromId(backendId)
+        logger.info("updateDependentCombos $backendEndpoint backend $backendEngine api $backendApi")
+
+        var currentBackendEndpoint = backendEndpoint
+
+        // Если вдруг id не из разрешённых — сразу исправляем
+        if (currentBackendEndpoint !in availableBackendEndpoints) {
+            currentBackendEndpoint = availableBackendEndpoints.firstOrNull() ?: BackendEndpoints.LM_STUDIO_ENDPOINT
+            settings.state.backendEngineId = currentBackendEndpoint.engine.id
+            settings.state.backendApiId = currentBackendEndpoint.api.id
+            logger.info("Backend fallback: $backendEndpoint → $currentBackendEndpoint")
+        }
+
+        // Models
+        val newModels = currentBackendEndpoint.defaultModelList
+        modelsModel.update(newModels)
+
+        val modelToSelect = newModels.firstOrNull { it == settings.state.modelListEndpointUrl }
+            ?: newModels.firstOrNull() ?: ""
+        logger.info("updateDependentCombos modelToSelect=${modelToSelect}")
+        settings.state.modelListEndpointUrl = modelToSelect
+        if (::modelsCombo.isInitialized) {
+            modelsCombo.selectedItem = modelToSelect
+        }
+
+        // Chat
+        //val newChat = currentBackendEndpoint.defaultChat
+        val newChat = currentBackendEndpoint.defaultResponses
+        chatModel.update(newChat)
+
+        val chatToSelect = newChat.firstOrNull { it == settings.state.chatEndpointUrl }
+            ?: newChat.firstOrNull() ?: ""
+        logger.info("updateDependentCombos chatToSelect=${chatToSelect}")
+        settings.state.chatEndpointUrl = chatToSelect
+        if (::chatCombo.isInitialized) {
+            chatCombo.selectedItem = chatToSelect
+        }
+
+        // URL
+        val newUrl = currentBackendEndpoint.engine.defaultHost
+        urlModel.update(newUrl)
+
+        val urlToSelect = newUrl.firstOrNull { it == settings.state.baseUrl }
+            ?: newChat.firstOrNull() ?: ""
+        logger.info("updateDependentCombos urlToSelect=${urlToSelect}")
+        settings.state.baseUrl = urlToSelect
+        if (::urlCombo.isInitialized) {
+            urlCombo.selectedItem = urlToSelect
+        }
+
+    }
 
     override fun getDisplayName(): String = "Local AI Settings"
 
-    override fun createComponent(): JComponent {
-        mainPanel.removeAll()
-        loadingPanel.removeAll()
-        contentPanel.removeAll()
+    override fun createPanel(): DialogPanel = panel {  // ← Kotlin UI DSL Version 2
 
-        // Настройка панели загрузки
-        val loaderIndicator = AsyncProcessIcon("LoadingModelsIcon")
-        val loadingBox = Box.createVerticalBox()
-        loadingBox.add(Box.createVerticalGlue())
-        loadingBox.add(loaderIndicator)
-        loadingBox.add(JBLabel("Connecting to Server...", SwingConstants.CENTER))
-        loadingBox.add(Box.createVerticalGlue())
-        loadingPanel.add(loadingBox, BorderLayout.CENTER)
+        //val propertyGraph = PropertyGraph(this.toString())
+
+        val backendModel = MutableCollectionComboBoxModel(availableBackendEndpoints)
+
+        // После создания backendModel и до collapsibleGroup
+        updateDependentCombos(BackendEngine.fromId(settings.state.backendEngineId), BackendApi.fromId(settings.state.backendApiId))   // ← инициализируем списки при первом открытии
+
+        collapsibleGroup("Connections") {
+
+            row("Backend:") {
+
+                comboBox(backendModel)
+                    // 2. Привязываем не сам объект, а его id (через getter/setter)
+                    .bindItem(
+                        // ← УМНЫЙ GETTER
+                        getter = {
+                            val storedEngineId = settings.state.backendEngineId
+                            val storedApiId = settings.state.backendApiId
+                            // Ищем по настоящему id
+                            availableBackendEndpoints.find { it.engine.id == storedEngineId && it.api.id == storedApiId}
+                            // Если id больше не разрешён — берём первый доступный
+                                ?: availableBackendEndpoints.firstOrNull()?: BackendEndpoints.LM_STUDIO_ENDPOINT
+                        },
+                        setter = { selectedBackend ->
+                            // Всегда сохраняем настоящий id выбранного бэкенда
+                            settings.state.backendEngineId = selectedBackend?.engine?.id?: BackendEngine.LM_STUDIO.id
+                            settings.state.backendApiId = selectedBackend?.api?.id?: BackendApi.LM_STUDIO_API.id
+                        }
+                    )
+                    // Опционально: обработка изменений
+                    .onChangedContext { component, context ->
+                        logger.info("Backend changed: ${component.selectedItem}, context: $context")
+                        // Обновляем два зависимых комбобокса при смене backend
+                        SwingUtilities.invokeLater {
+                            val selectedEndpoint = component.selectedItem as BackendEndpoints
+                            updateDependentCombos(selectedEndpoint.engine, selectedEndpoint.api)
+                        }
+
+                    }
+                // Сохраняем ссылку, если нужно
+            }
+
+            row("Models:") {
+                modelsCombo = comboBox(modelsModel)
+                    .onChangedContext { component, context -> logger.info("$component, $context, notEditable") }
+                    .bindItem(
+                        getter = { settings.state.modelListEndpointUrl },
+                        setter = { settings.state.modelListEndpointUrl = it.orEmpty() }
+                    )
+                    .component   // ← ЭТО САМОЕ ВАЖНОЕ! Здесь мы берём настоящий ComboBox
+            }
+
+            row("Chat:") {
+                chatCombo = comboBox(chatModel)
+                    .onChangedContext { component, context -> logger.info("$component, $context, notEditable") }
+                    .bindItem(
+                        getter = { settings.state.chatEndpointUrl },
+                        setter = { settings.state.chatEndpointUrl = it.orEmpty() }
+                    )
+                    .component   // ← ЭТО САМОЕ ВАЖНОЕ! Здесь мы берём настоящий ComboBox
+            }
+
+            row("Base URL:") {
+                urlCombo = comboBox(urlModel)
+                    .columns(30)
+                    .onChangedContext { component, context -> logger.info("$component, $context, notEditable") }
+                    .bindItem(
+                        getter = { settings.state.baseUrl },
+                        setter = { settings.state.baseUrl = it.orEmpty() }
+                    )
+                    .component   // ← ЭТО САМОЕ ВАЖНОЕ! Здесь мы берём настоящий ComboBox
+            }
+
+            row("API Key:") {
+                passwordField()
+                    .bindText(settings.state::apiKey)
+                    .columns(30)
+            }
+
+       }
+
+        group("Model Selection") {
+            row("Model:") {
+                cell(modelComboBox)
+                    .align(Align.FILL)
+                    .bindItem(
+                        getter = { settings.state.selectedModelName },
+                        setter = { newName ->
+                            settings.state.selectedModelName = newName.orEmpty()
+
+                            // ← Находим модель по имени и сохраняем key
+                            val selectedModel = modelsList.find { it.displayName == newName }
+                            if (selectedModel != null) {
+                                settings.state.selectedModelKey = selectedModel.key
+                                logger.info("Model changed → Name: ${selectedModel.displayName}, Key: ${selectedModel.key}")
+                            }
+                        }
+                    )
+
+                button("Refresh Models") {
+                    loadModelsAsync()
+                }
+            }
+
+            row("System:") {
+                textField().bindText(settings.state::system).align(AlignX.FILL)
+            }
+            row("Request settings:") {
+                label("Token limit:")
+                intTextField().bindIntText(settings.state::maxTokenLimit)
+                checkBox("Stream").bindSelected(settings.state::stream)
+            }
 
 
-        modelListEndpointComboBox.selectedIndex = PluginSettings.instance.modelListEndpointIndex
-        modelListEndpointComboBox.addItemListener {
-            val isCustom = modelListEndpointComboBox.selectedItem == "Custom..."
-            modelListCustomPanel.isVisible = isCustom
-            modelListCustomPanel.revalidate()
-            modelListCustomPanel.repaint()
         }
-        modelListCustomPanel.isVisible = modelListEndpointComboBox.selectedItem == "Custom..."
 
-        backendsComboBox.selectedIndex = PluginSettings.instance.backendIndex
 
-        chatEndpointsComboBox.selectedIndex = PluginSettings.instance.chatEndpointIndex
-        chatEndpointsComboBox.addItemListener {
-            val isCustom = chatEndpointsComboBox.selectedItem == "Custom..."
-            chatCustomPanel.isVisible = isCustom
-            chatCustomPanel.revalidate()
-            chatCustomPanel.repaint()
-        }
-        chatCustomPanel.isVisible = chatEndpointsComboBox.selectedItem == "Custom..."
-
-        // Настройка контента
-        val formPanel = FormBuilder.createFormBuilder()
-            .addLabeledComponent("Base URL:", baseUrl)
-            .addLabeledComponent("API Key:", apiKey)
-            .addLabeledComponent("Token Limit:", maxTokenLimit)
-            .addSeparator()
-            .addLabeledComponent("Model list endpoint:", modelListEndpointComboBox)
-            .addComponent(modelListCustomPanel)
-            .addLabeledComponent("Model:", modelComboBox)
-            .addSeparator()
-            .addLabeledComponent("Chat endpoint:", chatEndpointsComboBox)
-            .addComponent(chatCustomPanel)
-            .addSeparator()
-            .addLabeledComponent("Backend:", backendsComboBox)
-            .panel
-
-        val topWrapper = JPanel(BorderLayout())
-        topWrapper.add(formPanel, BorderLayout.NORTH)
-        contentPanel.add(topWrapper, BorderLayout.CENTER)
-        mainPanel.add(loadingPanel, "LOADING")
-        mainPanel.add(contentPanel, "CONTENT")
-        cardLayout.show(mainPanel, "LOADING")
-
+        // Запускаем загрузку моделей сразу при создании панели
         loadModelsAsync()
-        return mainPanel
+
+        // Кастомные callbacks
+        onApply {
+            /* дополнительная логика при Apply */
+            settings.notifyChange(project)
+        }
+        onReset { /* при Reset */ }
     }
 
     private fun loadModelsAsync() {
         isLoading = true
+        modelComboBox.removeAll()
+        modelComboBox.addItem("<Loading...>")
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val result = fetchModels()
-
+                for (model in result) {
+                    logger.info("Available model: ${model.displayName}")
+                }
                 SwingUtilities.invokeLater {
                     modelsList.clear()
                     modelsList.addAll(result)
@@ -158,133 +261,37 @@ class PluginSettingsConfigurable : Configurable {
                         result.forEach { modelComboBox.addItem(it.displayName) }
                     }
 
-                    val savedName = PluginSettings.instance.selectedModelName
-                    if (savedName.isNotEmpty()) {
-                        modelComboBox.selectedItem = savedName
-                    }
+                    // Восстанавливаем ранее выбранную модель по key (самый надёжный способ)
+                    val savedKey = settings.state.selectedModelKey
+                    val modelToSelect = modelsList.find { it.key == savedKey }
+                        ?: modelsList.firstOrNull()
+                    modelComboBox.selectedItem = modelToSelect?.displayName ?: ""
+
+//                    val savedName = settings.state.selectedModelName
+//                    if (savedName.isNotEmpty()) {
+//                        modelComboBox.selectedItem = savedName
+//                    }
 
                     isLoading = false
-                    // ФОРСИРУЕМ переключение и перерисовку
-                    cardLayout.show(mainPanel, "CONTENT")
-                    mainPanel.revalidate()
-                    mainPanel.repaint()
                 }
             } catch (e: Exception) {
                 // Если всё совсем плохо, покажем ошибку вместо вечной загрузки
                 SwingUtilities.invokeLater {
                     isLoading = false
-                    cardLayout.show(mainPanel, "CONTENT")
                     modelComboBox.addItem("Error: ${e.message}")
                 }
             }
         }
     }
 
-
-    fun parseLmStudio(json: JsonObject): List<Model> {
-
-        val list = (json["models"] ?: json["data"])
-            ?.jsonArray
-            ?.mapNotNull { it as? JsonObject }
-
-        return list?.map { obj ->
-
-            println("key")
-            val key = obj["key"]?.jsonPrimitive?.content
-                ?: obj["id"]?.jsonPrimitive?.content
-                ?: "unknown"
-
-            println("selectedVariant")
-            val selectedVariant = obj["selected_variant"]?.jsonPrimitive?.content
-
-            println("quantName = ${obj["quantization"]}")
-            val quantName = (obj["quantization"] as? JsonObject)
-                ?.get("name")
-                ?.jsonPrimitive
-                ?.content
-                ?.lowercase()
-
-            println("normalizedId")
-            val normalizedId = when {
-                selectedVariant != null -> selectedVariant
-                key.contains("@") -> key
-                quantName != null -> "$key@$quantName"
-                else -> key
-            }
-            println("Model")
-            Model(
-                key = normalizedId,
-                displayName = buildString {
-                    append(obj["display_name"]?.jsonPrimitive?.content ?: key)
-                    println("last")
-                    if (!normalizedId.contains("@") && quantName != null) {
-                        append(" @${quantName.uppercase()}")
-                    }
-                }
-            )
-        } ?: emptyList()
-    }
-
-    fun parseOpenAI(json: JsonObject): List<Model> {
-
-        val array = (json["models"] ?: json["data"])
-            ?.jsonArray
-            ?.map { it.jsonObject }
-
-        return array?.map { el ->
-            val obj = el.jsonObject
-
-            val key = obj["key"]?.jsonPrimitive?.content
-                ?: obj["id"]?.jsonPrimitive?.content
-                ?: "unknown"
-
-            val selectedVariant = obj["selected_variant"]?.jsonPrimitive?.content
-
-            val quantName = obj["quantization"]
-                ?.jsonObject
-                ?.get("name")
-                ?.jsonPrimitive
-                ?.content
-                ?.lowercase()
-
-            val normalizedId = when {
-                selectedVariant != null -> selectedVariant
-                key.contains("@") -> key
-                quantName != null -> "$key@$quantName"
-                else -> key
-            }
-
-            Model(
-                key = normalizedId,
-                displayName = buildString {
-                    append(obj["display_name"]?.jsonPrimitive?.content ?: key)
-
-                    if (!normalizedId.contains("@") && quantName != null) {
-                        append(" @${quantName.uppercase()}")
-                    }
-                }
-            )
-        } ?: emptyList()
-
-    }
-
-    fun parseModels(json: JsonObject): List<Model> {
-        return when {
-            json.containsKey("models") -> parseLmStudio(json)
-            json.containsKey("data") -> parseOpenAI(json)
-            else -> emptyList()
-        }
-    }
-
     private fun fetchModels(): List<Model> {
-        val settings = PluginSettings.instance
-        val modelListFull: String = when (settings.modelListEndpointIndex) {
-            0 -> settings.baseUrl.trimEnd('/') + "/api/v1/models"
-            1 -> settings.baseUrl.trimEnd('/') + "/v1/models"
-            else  -> settings.baseUrl.trimEnd('/') + settings.modelListEndpoint.trim()
-        }
+        val s = settings.state
 
+        val modelListFull = s.baseUrl.trim() + s.modelListEndpointUrl.trim()
+        val modelParser = ModelParser(project)
+        val provider = DefaultChatConfigProvider(project)
         val url = URI.create(modelListFull).toURL()
+        logger.warn("modelListFull: $modelListFull")
         val connection = url.openConnection() as HttpURLConnection
         connection.connectTimeout = 5000
         connection.readTimeout = 5000
@@ -292,79 +299,17 @@ class PluginSettingsConfigurable : Configurable {
         return try {
             connection.inputStream.bufferedReader().use { reader ->
                 val response = reader.readText()
-                val json = Json.parseToJsonElement(response).jsonObject
-                parseModels(json)
+                saveJson(project, "modelListFull", response)
+                modelParser.parseModels(response, provider.buildBackend().api.id)
+                //val json = Json.parseToJsonElement(response).jsonObject
+                //parseModels(json)
             }
         } catch (e: Exception) {
-            println("Error fetching models: ${e.message}")
+            logger.warn("Error fetching models: ${e.message}")
             throw e
         } finally {
             connection.disconnect()
         }
     }
 
-    override fun isModified(): Boolean {
-        val settings = PluginSettings.instance
-
-        // 1. Проверяем текстовые поля всегда
-        if (settings.maxTokenLimit != maxTokenLimit.text.trim().toInt()) return true
-        if (settings.apiKey != apiKey.text.trim()) return true
-        if (settings.baseUrl != baseUrl.text.trim()) return true
-        if (settings.backendIndex != backendsComboBox.selectedIndex) return true
-        if (settings.chatEndpointIndex != chatEndpointsComboBox.selectedIndex) return true
-        if (settings.chatEndpoint != chatCustomEndpoint.text.trim()) return true
-        if (settings.modelListEndpointIndex != modelListEndpointComboBox.selectedIndex) return true
-        if (settings.modelListEndpoint != modelListCustomEndpoint.text.trim()) return true
-
-        // 2. Если модели ещё не готовы — не трогаем ComboBox
-        if (isLoading || modelsList.isEmpty()) return false
-
-        // 3. Проверяем модель
-        val index = modelComboBox.selectedIndex
-        val selectedKey = modelsList.getOrNull(index)?.key
-
-        return selectedKey != settings.selectedModelKey
-    }
-
-    override fun apply() {
-        val settings = PluginSettings.instance
-
-        // Сохраняем текстовые поля всегда
-        settings.maxTokenLimit = maxTokenLimit.text.trim().toInt()
-        settings.apiKey = apiKey.text.trim()
-        settings.baseUrl = baseUrl.text.trim()
-        settings.backendIndex = backendsComboBox.selectedIndex
-        settings.chatEndpointIndex = chatEndpointsComboBox.selectedIndex
-        settings.chatEndpoint = chatCustomEndpoint.text.trim()
-        settings.modelListEndpointIndex = modelListEndpointComboBox.selectedIndex
-        settings.modelListEndpoint = modelListCustomEndpoint.text.trim()
-
-        // Сохраняем модель только если список загружен
-        if (!isLoading && modelsList.isNotEmpty()) {
-            val selectedIndex = modelComboBox.selectedIndex
-            if (selectedIndex >= 0 && selectedIndex < modelsList.size) {
-                settings.selectedModelKey = modelsList[selectedIndex].key
-                settings.selectedModelName = modelsList[selectedIndex].displayName
-            }
-        }
-        settings.notifyChange() // ⚡ сигнал об обновлении
-    }
-
-    override fun reset() {
-        val settings = PluginSettings.instance
-        maxTokenLimit.text = settings.maxTokenLimit.toString()
-        apiKey.text = settings.apiKey
-        modelListCustomEndpoint.text = settings.modelListEndpoint.ifBlank { "/v1/models" }
-        chatCustomEndpoint.text = settings.chatEndpoint.ifBlank { "/v1/responses" }
-        baseUrl.text = settings.baseUrl.ifBlank { "http://127.0.0.1:11434" }
-
-        if (modelsList.isNotEmpty()) {
-            val index = modelsList.indexOfFirst {
-                it.key == settings.selectedModelKey
-            }
-            if (index >= 0) {
-                modelComboBox.selectedIndex = index
-            }
-        }
-    }
 }

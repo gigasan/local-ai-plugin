@@ -39,9 +39,10 @@ enum class ModelState {
     ERROR
 }
 
-enum class EventType(val raw: String) {
-    CHAT_START("chat.start"),
-    CHAT_END("chat.end"),
+enum class EventType(val raw: String, vararg val aliases: String) {
+    CHAT_START("chat.start", "response.created"), // Начало
+    CHAT_END("chat.end", "response.output_item.done", "response.done", "response.completed"),
+    NON_STREAM_CHAT_END("non.stream.chat.end"),
 
     MODEL_LOAD_START("model_load.start"),
     MODEL_LOAD_PROGRESS("model_load.progress"),
@@ -55,9 +56,12 @@ enum class EventType(val raw: String) {
     REASONING_DELTA("reasoning.delta"),
     REASONING_END("reasoning.end"),
 
-    MESSAGE_START("message.start"),
-    MESSAGE_DELTA("message.delta"),
-    MESSAGE_END("message.end"),
+    // Эти можно просто добавить, чтобы не видеть Warn в логах
+    PROGRESS("response.in_progress"),
+
+    MESSAGE_START("message.start", "response.output_item.added", "response.content_part.added"),
+    MESSAGE_DELTA("message.delta", "response.output_text.delta"),
+    MESSAGE_END("message.end", "response.output_text.done", "response.content_part.done"),
 
     TOOL_START("tool_call.start"),
     TOOL_ARGS("tool_call.arguments"),
@@ -66,7 +70,9 @@ enum class EventType(val raw: String) {
     ERROR("error");
 
     companion object {
-        fun from(raw: String) = entries.find { it.raw == raw }
+        fun from(raw: String): EventType? {
+            return entries.find { it.raw == raw || it.aliases.contains(raw) }
+        }
     }
 }
 
@@ -133,6 +139,8 @@ class StateMachine {
 
             EventType.PROMPT_PROGRESS -> state
 
+            EventType.PROGRESS -> state
+
             EventType.PROMPT_END -> {
                 state.copy(promptProcessing = false)
             }
@@ -160,6 +168,8 @@ class StateMachine {
                     message = StringBuilder()
                 )
             }
+
+
 
             EventType.MESSAGE_DELTA -> {
                 val delta = extractText(data)
@@ -191,6 +201,11 @@ class StateMachine {
                     error = data
                 )
             }
+            EventType.NON_STREAM_CHAT_END -> {
+                //GenerationState(phase = Phase.IDLE)
+                state
+            }
+
         }
 
         return state

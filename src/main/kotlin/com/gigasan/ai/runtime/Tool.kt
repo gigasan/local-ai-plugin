@@ -1,10 +1,13 @@
 package com.gigasan.ai.runtime
 
 import com.intellij.openapi.diagnostic.Logger
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 
-private val LOG = Logger.getInstance("AITool")
+private val LOG = Logger.getInstance("Tool")
 
-data class AITool(
+data class Tool(
     val name: String,
     val description: String,
     val parameters: Map<String, String>
@@ -43,11 +46,11 @@ object ToolRegistry {
 //}
 
 
-class ToolOrchestrator(private val aiClient: AIClient) {
+class ToolOrchestrator(private val client: Client) {
 
-    fun run(ctx: ChatContext): AIResult {
+    fun run(ctx: ChatContext): Result {
 
-        val first = aiClient.send(ctx)
+        val first = client.send(ctx)
 
         if (first.toolCalls.isEmpty()) {
             return first
@@ -65,7 +68,7 @@ class ToolOrchestrator(private val aiClient: AIClient) {
 
         val secondCtx = ctx.copy(messages = ctx.messages + toolMessages)
 
-        return aiClient.send(secondCtx)
+        return client.send(secondCtx)
     }
 }
 
@@ -77,3 +80,36 @@ class ToolOrchestrator(private val aiClient: AIClient) {
 //  "path": "src/render/renderer.rs"
 //}
 
+
+@Serializable
+data class ToolCallItem(
+    val name: String,
+    //val arguments: JsonObject
+    val arguments: Map<String, JsonElement>
+)
+
+@Serializable
+data class ToolCallsResponse(
+    val tool_calls: List<ToolCallItem> = emptyList()
+)
+
+object ToolCallParser {
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
+
+    fun parse(raw: String): List<ToolCall> {
+
+        val parsed = json.decodeFromString<ToolCallsResponse>(raw)
+        val result = parsed.tool_calls.map {
+            ToolCall(
+                name = it.name,
+                arguments = it.arguments
+            )
+        }
+        return result
+    }
+
+}

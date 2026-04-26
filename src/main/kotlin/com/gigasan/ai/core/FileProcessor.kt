@@ -1,16 +1,21 @@
 package com.gigasan.ai.core
 
+import com.gigasan.ai.config.PluginConfigProvider
 import com.gigasan.ai.runtime.LocalAIService
+import com.intellij.openapi.components.service
+import com.intellij.openapi.project.Project
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import javax.swing.SwingUtilities
 import kotlin.math.min
 
-object FileProcessor {
+class FileProcessor(private val project: Project) {
+    // Получаем провайдер через систему сервисов
+    private val provider get() = project.service<PluginConfigProvider>()
 
     // Максимальное количество символов на один чанк (примерно под лимит токенов модели)
-    private const val CHUNK_SIZE = 4000
+    private val CHUNK_SIZE = 4000
 
     /**
      * Главная функция: обрабатывает файл через Local AI
@@ -49,7 +54,8 @@ object FileProcessor {
                     """.trimIndent()
 
                     // Вызов Local AI
-                    val response = LocalAIService.callLocalAI(prompt)
+                    val localAIService = project.service<LocalAIService>()
+                    val response = localAIService.callLocalAI(prompt)
 
                     results.add(response)
                 } catch (e: Exception) {
