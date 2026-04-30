@@ -6,97 +6,135 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 
 interface PluginConfigProvider {
-    fun buildChatEndpoint(): String
+    fun buildBackend(): BackendEndpoint
+    fun buildEndpointSetting(): EndpointSettings
     fun buildUrl(): String
-    //fun buildChatUrl(): String
+    fun buildChatEndpoint(): String
+    fun buildChatModel(): String
+
     fun buildApiKey(): String
     fun buildMaxTokenLimit(): Int
-    fun buildBackend(): BackendEndpoints
-    fun buildChatModel(): String
+    fun buildKeepAlive(): Int
+    fun buildTemperature(): Float
+    fun buildMaxContext(): Int
     fun buildStream(): Boolean
     fun buildSystem(): String
+    fun buildChatSystem(): String
     fun buildRequestBody(prompt: String): JsonObject
     fun buildExtraParams(prompt: String): JsonObject
 }
 
 @Service(Service.Level.PROJECT) // Без регистрации в plugin.xml!
 class DefaultChatConfigProvider(private val project: Project): PluginConfigProvider {
-    private val global = PluginSettings.instance.state
-    private val local = ProjectSpecificSettings.getInstance(project).state
+    private val global = PluginSettings.instance
+    private val local = ProjectSettings.getInstance(project).state
 
     /**
      * Формирует URL в зависимости от baseUrl и chatEndpointIndex.
      */
     override fun buildChatEndpoint(): String {
-        return local.chatEndpointUrl.trim()
+        return buildEndpointSetting().chatEndpointUrl.trim()
     }
 
     override fun buildUrl(): String {
-        return local.baseUrl.trim()
+        return buildEndpointSetting().baseUrl.trim()
     }
 
-//    override fun buildChatUrl(): String {
-//        return local.baseUrl.trim() + local.chatEndpointUrl.trim()
-//    }
-
     override fun buildApiKey(): String {
-        return local.apiKey.orEmpty()
+        return buildEndpointSetting().apiKey.trim()
     }
 
     override fun buildMaxTokenLimit(): Int {
-        return local.maxTokenLimit.or(8192)
+        return buildEndpointSetting().maxTokenLimit.or(4096)
+    }
+
+    override fun buildKeepAlive(): Int {
+        return buildEndpointSetting().keep_alive.or(5)
+    }
+
+    override fun buildTemperature(): Float {
+        return buildEndpointSetting().temperature
+    }
+
+    override fun buildMaxContext(): Int {
+        return buildEndpointSetting().maxContext.or(16384)
     }
 
     override fun buildChatModel(): String {
-        return local.selectedModelKey.orEmpty()
+        return buildEndpointSetting().selectedModelKey
     }
 
     override fun buildStream(): Boolean {
-        return local.stream.or(false)
+        return buildEndpointSetting().stream.or(false)
     }
 
     override fun buildSystem(): String {
-        return local.system.orEmpty()
+        return buildEndpointSetting().system
     }
 
-    override fun buildBackend(): BackendEndpoints {
-        // 1. Декодируем то, что сохранено в проекте
-        val preferred = BackendEndpoints.fromId(local.backendEngineId, local.backendApiId)?:BackendEndpoints.LM_STUDIO_ENDPOINT
+    override fun buildChatSystem(): String {
+        return local.chatSystemPrompt
+    }
 
+    override fun buildBackend(): BackendEndpoint {
+        // 1. Декодируем то, что сохранено в проекте
+        //val preferred = BackendEndpoint.fromId(local.backendEngineId, local.backendApiId)?:BackendEndpoint.LM_STUDIO_ENDPOINT
+        val preferred = local.backendEndpoint
         // 2. Проверяем, разрешен ли этот тип глобально
         val isAllowed = when (preferred) {
-            BackendEndpoints.LM_STUDIO_ENDPOINT -> global.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoints.LM_STUDIO_OPENAI_ENDPOINT -> global.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoints.LM_STUDIO_ANTHROPIC_ENDPOINT -> global.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoints.OLLAMA_ENDPOINT -> global.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoints.OLLAMA_OPENAI_ENDPOINT -> global.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoints.OLLAMA_ANTHROPIC_ENDPOINT -> global.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoints.OPEN_AI_ENDPOINT -> global.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoints.CLAUDE_ENDPOINT -> global.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.LM_STUDIO_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.LM_STUDIO_OPENAI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.LM_STUDIO_ANTHROPIC_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.OLLAMA_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.OLLAMA_OPENAI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.OLLAMA_ANTHROPIC_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.OPEN_AI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.CLAUDE_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
             else -> false
         }
 
         // 3. Если разрешен — отдаем, если нет — отдаем безопасный дефолт
-        return if (isAllowed) preferred else BackendEndpoints.LM_STUDIO_ENDPOINT
+        return if (isAllowed) preferred else BackendEndpoint.LM_STUDIO_ENDPOINT
     }
 
+    override fun buildEndpointSetting(): EndpointSettings {
+        // 1. Декодируем то, что сохранено в проекте
+        //val preferred = BackendEndpoint.fromId(local.backendEngineId, local.backendApiId)?:BackendEndpoint.LM_STUDIO_ENDPOINT
+        val preferred = local.backendEndpoint
 
+        // 2. Проверяем, разрешен ли этот тип глобально
+        val isAllowed = when (preferred) {
+            BackendEndpoint.LM_STUDIO_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.LM_STUDIO_OPENAI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.LM_STUDIO_ANTHROPIC_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.OLLAMA_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.OLLAMA_OPENAI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.OLLAMA_ANTHROPIC_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.OPEN_AI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            BackendEndpoint.CLAUDE_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
+            else -> false
+        }
+
+        // 3. Если разрешен — отдаем, если нет — отдаем безопасный д
+         return if (isAllowed) global.getSettingsFor(local.backendEndpoint) else global.getSettingsFor(BackendEndpoint.LM_STUDIO_ENDPOINT)
+        //return if (isAllowed) preferred else BackendEndpoint.LM_STUDIO_ENDPOINT
+    }
     /**
      * Формирует тело запроса в зависимости от endpointIndex.
      * Логика requestBody вынесена сюда, чтобы не дублировать в двух функциях.
      */
     override fun buildRequestBody(prompt: String): JsonObject {
-        val selectedModel = local.selectedModelKey.ifBlank { "default" }
+        val selectedModel = buildEndpointSetting().selectedModelKey.ifBlank { "default" }
 
         return JsonObject().apply {
-            when (local.backendEngineId) {
+            when (local.backendEndpoint.engine.id) {
                 BackendEngine.LM_STUDIO.id -> { //api/v1/chat (LM Studio)
                     addProperty("model", selectedModel)
                     addProperty("input", prompt)
                 }
 
                 BackendEngine.OPEN_AI.id ->
-                    when (local.chatEndpointUrl) {
+                    when (buildEndpointSetting().chatEndpointUrl) {
                         "/v1/responses" -> {
                             addProperty("model", selectedModel)
                             addProperty("input", prompt)

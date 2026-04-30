@@ -4,7 +4,7 @@ import com.intellij.openapi.ui.Messages
 import com.gigasan.ai.analysis.KotlinProjectAnalyzer
 import com.gigasan.ai.analysis.RustProjectAnalyzer
 import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.ProjectSpecificSettings
+import com.gigasan.ai.config.ProjectSettings
 import com.gigasan.ai.core.projectHasKotlinSource
 import com.gigasan.ai.ui.RefactorDialog
 import com.intellij.icons.AllIcons
@@ -22,7 +22,6 @@ import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
-import org.jetbrains.kotlin.idea.facet.getInstance
 
 class AnalyzeAction : AnAction("Analyze Project", "Scan project and open refactor dialog", AllIcons.Actions.DependencyAnalyzer) {
     private val logger = Logger.getInstance("AnalyzeAction")
@@ -37,8 +36,8 @@ class AnalyzeAction : AnAction("Analyze Project", "Scan project and open refacto
             e.presentation.isEnabledAndVisible = false
             return
         }
-        val state = ProjectSpecificSettings.getInstance(project).state
-        val model = state.selectedModelName
+        val state = ProjectSettings.getInstance(project).state
+        val model = settings.getSettingsFor(state.backendEndpoint).selectedModelName
 //        val dynamicText = if (model.isNotBlank()) {
 //            "Refactor with Local AI ($model)"
 //        } else {
@@ -120,7 +119,7 @@ class AnalyzeAction : AnAction("Analyze Project", "Scan project and open refacto
                 }
 
                 override fun onThrowable(error: Throwable) {
-                    logger.error("Analysis failed", error)
+                    logger.warn("Analysis failed", error)
                     ApplicationManager.getApplication().invokeLater {
                         Messages.showErrorDialog(project, "Analysis failed: ${error.message}", "Error")
                     }

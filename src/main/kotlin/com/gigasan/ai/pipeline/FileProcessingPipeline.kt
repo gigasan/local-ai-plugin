@@ -9,7 +9,7 @@ import com.intellij.openapi.vfs.VirtualFile
  * ├── FilterStage      (жёсткие исключения)
  * ├── SelectStage      (условия выбора)
  * ├── ScoringStage     (оценка)
- * └── Result
+ * └── ResponseResult
  * ```
  *```
  * val config = PipelineConfig(

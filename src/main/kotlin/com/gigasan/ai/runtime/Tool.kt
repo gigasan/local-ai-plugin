@@ -1,5 +1,8 @@
 package com.gigasan.ai.runtime
 
+import com.gigasan.ai.runtime.parser.ResponseResult
+import com.gigasan.ai.runtime.parser.onError
+import com.gigasan.ai.runtime.parser.onSuccess
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -48,13 +51,13 @@ object ToolRegistry {
 
 class ToolOrchestrator(private val client: Client) {
 
-    fun run(ctx: ChatContext): Result {
+    fun run(ctx: ChatContext): ResponseResult {
 
         val first = client.send(ctx)
 
-        if (first.toolCalls.isEmpty()) {
-            return first
-        }
+        if (first !is ResponseResult.Success) { return first }
+
+        if (first.toolCalls.isEmpty()) { return first }
 
         val toolMessages = first.toolCalls.map { tool ->
             val result = ToolRegistry.execute(tool.name, tool.arguments)
@@ -72,44 +75,9 @@ class ToolOrchestrator(private val client: Client) {
     }
 }
 
-
 // tool chaining : User → AI → tool1 → AI → tool2 → AI → answer
 
 // {
 //  "action": "get_file_content",
 //  "path": "src/render/renderer.rs"
 //}
-
-
-@Serializable
-data class ToolCallItem(
-    val name: String,
-    //val arguments: JsonObject
-    val arguments: Map<String, JsonElement>
-)
-
-@Serializable
-data class ToolCallsResponse(
-    val tool_calls: List<ToolCallItem> = emptyList()
-)
-
-object ToolCallParser {
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-    }
-
-    fun parse(raw: String): List<ToolCall> {
-
-        val parsed = json.decodeFromString<ToolCallsResponse>(raw)
-        val result = parsed.tool_calls.map {
-            ToolCall(
-                name = it.name,
-                arguments = it.arguments
-            )
-        }
-        return result
-    }
-
-}

@@ -1,7 +1,6 @@
 package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.ProjectSpecificSettings
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread

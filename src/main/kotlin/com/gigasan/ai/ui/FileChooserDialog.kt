@@ -1,6 +1,13 @@
 ﻿package com.gigasan.ai.ui
 
 import com.anthropic.client.okhttp.AnthropicOkHttpClient
+import com.gigasan.ai.config.Model
+import com.gigasan.ai.config.ModelSettingsPanel
+import com.gigasan.ai.config.PluginSettings
+import com.gigasan.ai.config.ProjectSettings
+import com.gigasan.ai.config.createModelSettingsPanel
+import com.gigasan.ai.config.loadModelsAsync
+import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.lang.Language
 import com.intellij.openapi.components.PersistentStateComponent
@@ -49,6 +56,8 @@ import javax.swing.JLabel
 import javax.swing.JTextField
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.dsl.builder.AlignX
 import javax.swing.BoxLayout
 import javax.swing.Box
@@ -61,6 +70,7 @@ import com.intellij.ui.dsl.builder.Row
 import com.intellij.ui.dsl.builder.RowLayout
 import com.intellij.ui.dsl.builder.TopGap
 import com.intellij.ui.dsl.builder.bindIntText
+import com.intellij.ui.dsl.builder.bindIntValue
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindValue
@@ -79,6 +89,7 @@ import com.intellij.util.ui.JBUI
 import java.awt.Component
 import javax.swing.DefaultListCellRenderer
 import javax.swing.JList
+import javax.swing.SpinnerNumberModel
 
 
 // ========== Настройки промптов ==========
@@ -91,7 +102,6 @@ class PromptSettings : PersistentStateComponent<PromptSettings.State> {
         var systemExpanded: Boolean = false,
         var inputExpanded: Boolean = false,
         var commonExpanded: Boolean = false,
-
     )
 
     private var myState = State()
@@ -109,6 +119,11 @@ class FileChooserDialog(
     private val root: VirtualFile,
     private val onFileSelected: (VirtualFile, String) -> Unit
 ) : DialogWrapper(project) {
+    private val pluginSettings = PluginSettings.instance
+    private val projectSettings = ProjectSettings.getInstance(project)
+
+    // model settings from ModelSettingsPanel.kt
+    lateinit var msp: ModelSettingsPanel // Контейнер с компонентами для ModelSettingsPanel
 
     private val treeRoot = DefaultMutableTreeNode("root")
     private val treeModel = DefaultTreeModel(treeRoot)
@@ -136,6 +151,8 @@ class FileChooserDialog(
         previewContainer.add(previewEditor, "TEXT")
         previewContainer.add(JBScrollPane(imagePreviewLabel), "IMAGE")
         setupTree(root)
+        setOKButtonText("Send to AI")
+        logger.info("initialized")
         init()
     }
 
@@ -190,6 +207,24 @@ class FileChooserDialog(
 
     // ======================= ПАНЕЛЬ НАСТРОЕК С ПРОМПТАМИ =======================
     private fun createSettingsPanel(): JComponent {
+
+        msp = ModelSettingsPanel(
+            project,
+            modelsComboBox = ComboBox<String>(),
+            modelsList = mutableListOf<Model>(),
+            isLoading = false,
+            endpointSettings = pluginSettings.getSettingsFor(projectSettings.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
+            selectedEndpoint = projectSettings.state.backendEndpoint,
+        )
+        lateinit var modelSettingsPanel: DialogPanel
+        fun refreshUIFromModel(mcc: ModelSettingsPanel) {
+            modelSettingsPanel.reset()
+        }
+
+        // Передаем this и контейнер компонентов
+        modelSettingsPanel = createModelSettingsPanel(msp)
+
+
         // Инициализируем модели
         systemsModel = DefaultComboBoxModel<String>().apply {
             promptSettings.state.systems.forEach { addElement(it) }
@@ -198,7 +233,15 @@ class FileChooserDialog(
             promptSettings.state.prompts.forEach { addElement(it) }
         }
 
+        var stepsProperty: Int = 0
         return panel {
+            // Регистрируем вашу внешнюю панель в жизненном цикле этой DSL панели
+            onIsModified { modelSettingsPanel.isModified() }
+            onApply { modelSettingsPanel.apply() }
+            onReset { modelSettingsPanel.reset() }
+
+
+
             collapsibleGroup("Request Settings") {
 
                 row("Система:") {
@@ -343,31 +386,61 @@ class FileChooserDialog(
                             preferredSize = Dimension(26, 26)
                         }
                 }
-                row {
-                    checkBox("Wrap DATA block")
-                }
             }.apply {
                 expanded = promptSettings.state.systemExpanded // Разворачиваем группу сразу после создания
                 // 2. Слушаем изменения (клик пользователя по стрелочке)
                 addExpandedListener { isExpanded ->
                     promptSettings.state.systemExpanded = isExpanded
                 }
-
             }.customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
+
+
+
+
+
+
+
+
+
 
             // --- INPUT НАСТРОЙКИ ---
             collapsibleGroup("Request Features") {
                 row {
-                    checkBox("Stream")
-                    checkBox("Thinking").onChanged {
 
-                    }
-                    //spinner(0..100)
+                    checkBox("Wrap DATA block")
+
                     //intTextField(0..100)
-                    label("Temperature:")
-                    slider(0, 10, 1, 0)
+                    label("Steps:")
+                    slider(0, 10, 0, 1)  // min, max, minorTickSpacing, majorTickSpacing
+                        //.bindValue(::yourProperty)   // или .bindIntValue если нужно
+                        .apply {
+                            val sliderComp = component   // это JBSlider
+
+                            sliderComp.snapToTicks = true           // ← главное!
+                            sliderComp.paintTicks = true            // показывать деления
+                            sliderComp.paintLabels = true           // показывать цифры (по major ticks)
+
+                            // Дополнительно можно настроить шаг делений
+                            sliderComp.minorTickSpacing = 1
+                            sliderComp.majorTickSpacing = 2         // цифры будут каждые 2
+                        }
                     //textField().columns(2)
 
+
+
+
+//                    label("Temperature:")
+//                    val stepsSpinner = spinner(0..10, step = 1)
+                        //.bindIntValue(::stepsProperty)
+
+//                    stepsSpinner.onChanged {
+//                        val model = stepsSpinner.component.model as SpinnerNumberModel
+//                        val current = stepsSpinner.component.value as Int
+//
+//                        if (current >= model.maximum as Int) {
+//                            model.maximum = current + 10   // увеличиваем "потолок"
+//                        }
+//                    }
                 }
             }.apply {
                 expanded = promptSettings.state.inputExpanded
@@ -375,7 +448,7 @@ class FileChooserDialog(
                 addExpandedListener { isExpanded ->
                     promptSettings.state.inputExpanded = isExpanded
                 }
-            }.customize(UnscaledGapsY(bottom = 20))
+            }.customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
 
 
             collapsibleGroup("General UI") {
@@ -396,9 +469,19 @@ class FileChooserDialog(
                 addExpandedListener { isExpanded ->
                     promptSettings.state.commonExpanded = isExpanded
                 }
-            }.customize(UnscaledGapsY(bottom = 20))
+            }.customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
 
 
+
+
+            // Model Settings (Endpoint Dependent)
+            row {
+                cell(modelSettingsPanel).align(AlignX.FILL)
+                .customize(UnscaledGaps(bottom = 10)) // Убираем лишнюю пустоту снизу
+            }
+
+            // Запускаем загрузку моделей сразу при создании панели
+            loadModelsAsync(project, projectSettings.state.backendEndpoint, msp)
 
 
         }
@@ -626,7 +709,7 @@ class FileChooserDialog(
     private fun createButtonsPanel(): JComponent {
         val panel = JPanel()
 
-        val openBtn = JButton("Open").apply {
+        val openBtn = JButton("Clean steps").apply {
             addActionListener {
                 selectedFile?.let { file ->
                     val prompt = promptsCombo.selectedItem as? String ?: ""
@@ -637,7 +720,7 @@ class FileChooserDialog(
         }
 
 
-        val explainBtn = JButton("Explain").apply {
+        val explainBtn = JButton("Add Step: Description").apply {
             addActionListener {
                 selectedFile?.let {
                     onFileSelected(it, "explain")
@@ -645,7 +728,7 @@ class FileChooserDialog(
             }
         }
 
-        val refactorBtn = JButton("Refactor").apply {
+        val refactorBtn = JButton("Add Step: Data block ").apply {
             addActionListener {
                 selectedFile?.let {
                     onFileSelected(it, "refactor")
@@ -653,7 +736,7 @@ class FileChooserDialog(
             }
         }
 
-        val testsBtn = JButton("Generate tests").apply {
+        val testsBtn = JButton("Estimate the size").apply {
             addActionListener {
                 selectedFile?.let {
                     onFileSelected(it, "tests")
@@ -716,5 +799,16 @@ class FileChooserDialog(
         return true
     }
 
+    override fun doOKAction() {
+        super.doOKAction()
+        logger.info("doOKAction performed")
+        //ChatPanel.instance?.sendExternalMessage(codeTextField.text, taskField.text)
+        //wrapCodeBlock(taskField.text, codeTextField.text, language)
+        //)
+    }
 
+    override fun doCancelAction() {
+        super.doCancelAction()
+        logger.info("doCancelAction performed")
+    }
 }

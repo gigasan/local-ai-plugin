@@ -1,42 +1,57 @@
 package com.gigasan.ai.config
 
-import com.gigasan.ai.runtime.StreamPayload
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import it.unimi.dsi.fastutil.ints.IntLists
+import com.intellij.util.xmlb.annotations.Attribute
+import com.intellij.util.xmlb.annotations.Tag
+import com.intellij.util.xmlb.annotations.XCollection
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import java.util.Locale.getDefault
-import kotlin.text.contains
-import kotlin.text.uppercase
 
+@Tag("ModelCache")
+data class ModelCache(
+    // Обязательно @XCollection для списков объектов
+    @XCollection(style = XCollection.Style.v2)
+    var models: List<Model> = listOf(),
+    @Attribute("timestamp") var timestamp: Long = 0
+)
 
 enum class Source { LM_STUDIO, OLLAMA, OPEN_AI }
 
-data class Model( // LM Studio or Ollama
-    val source: Source,
-    val key: String, // key or model
-    val displayName: String, // display_name or name
-    val size: Int, // size_bytes or size
-    val format: String, // format or details/format
-    val quant: String, // quantization/name or details/quantization_level
-    val params: String, // params_string or details/parameter_size
-    val arc: String, // architecture or details/family
-    val maxContext: Int, // max_context_length or null
-    val tools: Boolean, // capabilities/trained_for_tool_use or null
+@Tag("Model")
+data class Model(
+    @Attribute("source") var source: Source = Source.LM_STUDIO,
+    @Attribute("key") var key: String = "",
+    @Attribute("name") var displayName: String = "",
+    @Attribute("size") var size: Long = 0,
+    @Attribute("format") var format: String = "",
+    @Attribute("quant") var quant: String = "",
+    @Attribute("params") var params: String = "",
+    @Attribute("arc") var arc: String = "",
+    @Attribute("maxContext") var maxContext: Int = 0,
+    @Attribute("tools") var tools: Boolean = false
 )
+
+
+//data class Model( // LM Studio or Ollama
+//    val source: Source,
+//    val key: String, // key or model
+//    val displayName: String, // display_name or name
+//    val size: Long, // size_bytes or size
+//    val format: String, // format or details/format
+//    val quant: String, // quantization/name or details/quantization_level
+//    val params: String, // params_string or details/parameter_size
+//    val arc: String, // architecture or details/family
+//    val maxContext: Int, // max_context_length or null
+//    val tools: Boolean, // capabilities/trained_for_tool_use or null
+//)
 
 fun String?.orUnknown() = this ?: "unknown"
 
-private val logger = Logger.getInstance("ModelParser")
-
 class ModelParser(project: Project) {
 
+    private val logger = Logger.getInstance("ModelParser")
 
     // DTO под LM Studio
     @Serializable
@@ -109,7 +124,7 @@ class ModelParser(project: Project) {
         return Model(
             key = key,
             displayName = display_name,
-            size = size_bytes.toInt(),
+            size = size_bytes,
             format = format ?: "unknown",
             quant = quantization?.name ?: "unknown",
             params = params_string ?: "unknown",
@@ -151,7 +166,7 @@ class ModelParser(project: Project) {
         return Model(
             key = model,
             displayName = name,
-            size = size.toInt(),
+            size = size,
             format = details?.format ?: "unknown",
             quant = details?.quantization_level ?: "unknown",
             params = details?.parameter_size ?: "unknown",
@@ -196,17 +211,18 @@ class ModelParser(project: Project) {
     }
 
     fun parseModels(jsonString: String, apiId: Int): List<Model> {
-        val json = Json {
-            ignoreUnknownKeys = true
-            coerceInputValues = true
-            //isLenient = true
-        }
+        val json = Json
+//            ignoreUnknownKeys = true
+//            coerceInputValues = true
+//            isLenient = true
+//    }
 
         val list = try {
             when (BackendApi.fromId(apiId)) {
                 BackendApi.LM_STUDIO_API -> {
                     val lmResponse = json.decodeFromString<LmStudioResponse>(jsonString)
-                    lmResponse.models.filter { it.type == "llm" }.map { it.toModel() }
+                    lmResponse.models.map { it.toModel() }
+                    //lmResponse.models.filter { it.type == "llm" }.map { it.toModel() }
                 }
                 BackendApi.OLLAMA_API -> {
                     val ollamaResponse = json.decodeFromString<OllamaResponse>(jsonString)
@@ -217,8 +233,9 @@ class ModelParser(project: Project) {
                     openAiResponse.data.map { it.toModel() }
                 }
                 BackendApi.CLAUDE_API -> {
-                    val openAiResponse = json.decodeFromString<OpenAiResponse>(jsonString)
-                    openAiResponse.data.map { it.toModel() }
+//                    val claudeResponse = json.decodeFromString<claudeResponse>(jsonString)
+//                    claudeResponse.data.map { it.toModel() }
+                    emptyList()
                 }
             }
         } catch (e: Exception) {

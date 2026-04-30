@@ -3,21 +3,22 @@ package com.gigasan.ai.runtime
 import com.gigasan.ai.config.BackendApi
 import com.gigasan.ai.config.PluginConfigProvider
 import com.gigasan.ai.core.JsonFileLogger
+import com.gigasan.ai.runtime.parser.ResponseParser
+import com.gigasan.ai.runtime.parser.ResponseResult
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import okhttp3.Request
-
 
 private val logger = Logger.getInstance("BackendAdapter")
 
-
 data class ExecutionContext(
     val request: Request,
-    val parser: (String) -> Result, // Для обычного режима
+    val parser: (String) -> ResponseResult, // Для обычного режима
     val streamProcessorFactory: (StateManager, StateMachine) -> StreamResponseProcessor // Для стриминга
 )
 
@@ -26,6 +27,7 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
 
     val sseParser = SSEParser(project)
     val streamParser = StreamParser(project)
+    val responseParser = ResponseParser(project)
 
     fun getContext(ctx: ChatContext, stateManager: StateManager, stateMachine: StateMachine): ExecutionContext {
         val baseUrl = provider.buildUrl()
@@ -35,17 +37,20 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
         // Определяем, какой адаптер использовать
         val (request, parser) = when (val backend = provider.buildBackend().api to endpoint) {
             BackendApi.LM_STUDIO_API to "/api/v1/chat" ->
-                LmStudioAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to AIResponseParser::parse
+                LmStudioAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
+
+            BackendApi.OLLAMA_API to "/api/chat" ->
+                OllamaAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
 
             BackendApi.OPEN_AI_API to "/v1/chat/completions" ->
-                ChatCompletionsAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to AIResponseParser::parse
+                ChatCompletionsAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
 
             BackendApi.OPEN_AI_API to "/v1/responses" ->
-                ResponsesAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to AIResponseParser::parse
+                ResponsesAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
 
             // Здесь можно добавить специфичный парсер, если OpenAI формат отличается
             else ->
-                ChatCompletionsAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to AIResponseParser::parse
+                ChatCompletionsAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
         }
 
         return ExecutionContext(
@@ -68,6 +73,7 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
 
         return when (backend.api to endpoint) {
             BackendApi.LM_STUDIO_API to "/api/v1/chat" -> LmStudioAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey)
+            BackendApi.OLLAMA_API to "/api/chat" -> LmStudioAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey)
             BackendApi.OPEN_AI_API to "/v1/chat/completions" -> ChatCompletionsAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey)
             BackendApi.OPEN_AI_API to "/v1/responses" -> ResponsesAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey)
             else -> DefaultAdapter.toRequest(project, ctx, baseUrl, apiKey)
@@ -91,6 +97,9 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
             BackendApi.LM_STUDIO_API to "/api/v1/chat" ->
                 LmStudioAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to defaultProcessor
 
+            BackendApi.OLLAMA_API to "/api/chat" ->
+                OllamaAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to defaultProcessor
+
             BackendApi.OPEN_AI_API to "/v1/chat/completions" ->
                 ChatCompletionsAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to defaultProcessor
 
@@ -103,7 +112,136 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
 }
 
 
+object DefaultAdapter: JsonFileLogger {
 
+    fun toRequest(project: Project, ctx: ChatContext, url: String, apiKey: String): Request {
+        val json = buildJsonObject {
+            put("model", ctx.model)
+            putJsonArray("messages") {
+                ctx.messages.forEach {
+                    add(buildJsonObject {
+                        put("role", it.role)
+                        put("content", it.content)
+                    })
+                }
+            }
+            ctx.temperature.let { put("temperature", it) }
+            ctx.maxTokens.let { put("max_tokens", it) }
+        }
+        logger.info("DefaultAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        saveJson(project, "request_DefaultAdapter", json.toString())
+        return json.toHttpRequest(url, apiKey)
+    }
+}
+
+object ChatCompletionsAdapter: JsonFileLogger {
+
+    fun toRequest(project: Project, ctx: ChatContext, url: String, apiKey: String): Request {
+        val json = buildJsonObject {
+            put("model", ctx.model)
+
+            putJsonArray("messages") {
+                ctx.messages.forEach {
+                    add(buildJsonObject {
+                        put("role", it.role)
+                        put("content", it.content)
+                    })
+                }
+            }
+            ctx.stream.let { put("stream", it) }
+            ctx.temperature.let { put("temperature", it) }
+            ctx.maxTokens.let { put("max_tokens", it) }
+        }
+        logger.info("ChatCompletionsAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        saveJson(project, "request_ChatCompletionsAdapter", json.toString())
+        return json.toHttpRequest(url, apiKey)
+    }
+}
+
+object ResponsesAdapter: JsonFileLogger {
+
+    fun toRequest(project: Project, ctx: ChatContext, url: String, apiKey: String): Request {
+        val json = buildJsonObject {
+            put("model", ctx.model)
+            putJsonArray("input") {
+                // 👉 system message первым
+                ctx.system.let { systemText ->
+                    add(buildJsonObject {
+                        put("role", "system")
+                        put("content", systemText)
+                    })
+                }
+                ctx.messages.forEach {
+                    add(buildJsonObject {
+                        put("role", it.role)
+                        put("content", it.content)
+                    })
+                }
+            }
+            put("temperature", ctx.temperature)
+            //put("max_tokens", ctx.maxTokens)
+            put("stream", ctx.stream)
+        }
+        logger.info("ResponsesAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        // Сохраняем запрос
+        saveJson(project, "request_ResponsesAdapter", json.toString())
+        return json.toHttpRequest(url, apiKey)
+    }
+}
+
+object OllamaAdapter: JsonFileLogger {
+
+    fun toRequest(project: Project, ctx: ChatContext, url: String, apiKey: String): Request {
+        val json = buildJsonObject {
+            put("model", ctx.model)
+
+            putJsonArray("messages") {
+
+                ctx.system.let { systemText ->
+                    add(buildJsonObject {
+                        put("role", "system")
+                        put("content", systemText)
+                    })
+                }
+
+                ctx.messages.forEach {
+                    add(buildJsonObject {
+                        put("role", it.role)
+                        put("content", it.content)
+                    })
+                }
+
+                // messages.images string [Base64-encoded image content] Optional list of inline images for multimodal models
+
+                // messages.tool_calls object[]
+                // -> messages.tool_calls.function object
+                // --> messages.tool_calls.function.name string required
+                // --> messages.tool_calls.function.description string
+                // --> messages.tool_calls.function.arguments object
+
+            }
+
+            putJsonObject("option") {
+                put("temperature", ctx.temperature)
+                put("num_predict", ctx.maxTokens)
+                put("logprobs", true)
+                put("top_logprobs", 0)
+
+            }
+            // tools object[]
+            // format enum:string json
+
+            put("stream", ctx.stream) // default true
+            put("think", ctx.think)
+            put("keep_alive", "${ctx.keep_alive}m")
+
+
+        }
+        logger.info("OllamaAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        saveJson(project, "request_OllamaAdapter", json.toString())
+        return json.toHttpRequest(url, apiKey)
+    }
+}
 
 object LmStudioAdapter: JsonFileLogger {
 
@@ -129,89 +267,16 @@ object LmStudioAdapter: JsonFileLogger {
             put("max_output_tokens", ctx.maxTokens)
             put("context_length", ctx.contextLen)
             put("stream", ctx.stream)
+            val reasoning = when (ctx.think) {
+                true -> "on"
+                false -> "off"
+            }
+            // depends on model capability reasoning otherwise error
+            //put("reasoning", reasoning)
+
         }
-        logger.warn("LmStudioAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        logger.info("LmStudioAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
         saveJson(project, "request_LmStudioAdapter", json.toString())
         return json.toHttpRequest(url, apiKey)
     }
-
 }
-
-object ResponsesAdapter: JsonFileLogger {
-
-    fun toRequest(project: Project, ctx: ChatContext, url: String, apiKey: String): Request {
-        val json = buildJsonObject {
-            put("model", ctx.model)
-            putJsonArray("input") {
-                // 👉 system message первым
-                ctx.system.let { systemText ->
-                    add(buildJsonObject {
-                        put("role", "system")
-                        put("content", systemText)
-                    })
-                }
-                ctx.messages.forEach {
-                    add(buildJsonObject {
-                        put("role", it.role)
-                        put("content", it.content)
-                    })
-                }
-            }
-            put("temperature", ctx.temperature)
-            put("max_tokens", ctx.maxTokens)
-            put("stream", ctx.stream)
-        }
-        logger.warn("ResponsesAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
-        // Сохраняем запрос
-        saveJson(project, "request_ResponsesAdapter", json.toString())
-        return json.toHttpRequest(url, apiKey)
-    }
-}
-
-
-object ChatCompletionsAdapter: JsonFileLogger {
-
-    fun toRequest(project: Project, ctx: ChatContext, url: String, apiKey: String): Request {
-        val json = buildJsonObject {
-            put("model", ctx.model)
-
-            putJsonArray("messages") {
-                ctx.messages.forEach {
-                    add(buildJsonObject {
-                        put("role", it.role)
-                        put("content", it.content)
-                    })
-                }
-            }
-            ctx.temperature.let { put("temperature", it) }
-            ctx.maxTokens.let { put("max_tokens", it) }
-        }
-        logger.warn("ChatCompletionsAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
-        saveJson(project, "request_ChatCompletionsAdapter", json.toString())
-        return json.toHttpRequest(url, apiKey)
-    }
-}
-
-
-object DefaultAdapter: JsonFileLogger {
-
-    fun toRequest(project: Project, ctx: ChatContext, url: String, apiKey: String): Request {
-        val json = buildJsonObject {
-            put("model", ctx.model)
-            putJsonArray("messages") {
-                ctx.messages.forEach {
-                    add(buildJsonObject {
-                        put("role", it.role)
-                        put("content", it.content)
-                    })
-                }
-            }
-            ctx.temperature.let { put("temperature", it) }
-            ctx.maxTokens.let { put("max_tokens", it) }
-        }
-        logger.warn("DefaultAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
-        saveJson(project, "request_DefaultAdapter", json.toString())
-        return json.toHttpRequest(url, apiKey)
-    }
-}
-

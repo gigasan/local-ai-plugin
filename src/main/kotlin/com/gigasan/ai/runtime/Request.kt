@@ -27,11 +27,13 @@ data class ChatContext(
     val model: String,
     val system: String,
     val messages: List<ChatMessage>,
-    val temperature: Double = 0.7,
+    val temperature: Float = 0.666f,
     val maxTokens: Int,
+    val keep_alive: Int,
     val metadata: Map<String, String> = emptyMap(),
     val contextLen: Int,
     val stream: Boolean = false,
+    val think: Boolean = false,
 )
 
 class ChatRequestBuilder(private val project: Project) {
@@ -40,6 +42,7 @@ class ChatRequestBuilder(private val project: Project) {
     private var system: String = ""
     private val messages = mutableListOf<ChatMessage>()
     private var stream: Boolean = false
+    private var think: Boolean = false
     private var memoryEnabled: Boolean = false
     private var memoryLimit: Int = 5
     private val tools = mutableListOf<Tool>()
@@ -48,7 +51,7 @@ class ChatRequestBuilder(private val project: Project) {
         tools += Tool(name, description, params)
     }
 
-    private var temperature: Double? = null
+    private var temperature: Float? = null
     private var maxTokens: Int? = null
     private val metadata = mutableMapOf<String, String>()
 
@@ -82,13 +85,18 @@ class ChatRequestBuilder(private val project: Project) {
         memoryLimit = limit
     }
 
-    fun temperature(value: Double) = apply {
+    fun temperature(value: Float) = apply {
         temperature = value
     }
 
     fun maxTokens(value: Int) = apply {
         maxTokens = value
     }
+
+    fun reasoning(reasoning: Boolean) = apply {
+        think = reasoning
+    }
+
 
     fun meta(key: String, value: String) = apply {
         metadata[key] = value
@@ -98,8 +106,9 @@ class ChatRequestBuilder(private val project: Project) {
         return ChatContext(
             model = model,
             messages = messages,
-            temperature = temperature ?: 0.7,
+            temperature = temperature?: provider.buildTemperature(),
             maxTokens = maxTokens ?: provider.buildMaxTokenLimit(),
+            keep_alive = provider.buildKeepAlive(),
             metadata = metadata,
             system = system, // "Ты агент, говорящий только на русском языке и очень молчаливый. Отвечаешь очень и очень кратко"
             contextLen = provider.buildMaxTokenLimit(),

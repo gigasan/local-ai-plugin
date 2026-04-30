@@ -278,7 +278,7 @@ class RustCodeDatabase private constructor(moduleName: String) {   // ← privat
             logger.info("Old data cleared for fileId=$fileId | functions=$deletedFunctions, containers=$deletedContainers, comments=$deletedComments")
 
         } catch (e: Exception) {
-            logger.error("Error while clearing data for fileId=$fileId", e)
+            logger.warn("Error while clearing data for fileId=$fileId", e)
         }
     }
 
@@ -414,13 +414,13 @@ class RustCodeDatabase private constructor(moduleName: String) {   // ← privat
      */
     fun buildDenseReport(fileId: Int, deep: Boolean): StringBuilder {
         val codeRes = StringBuilder()
-        logger.warn("buildDenseReport start $fileId")
+        logger.warn("start $fileId")
         // 1. Топ-левел функции — всегда показываем (аналогично Kotlin)
         val topLevelFunctions = getTopLevelFunctions(fileId)
         if (topLevelFunctions.isNotEmpty()) {
             codeRes.append("=== Top-level functions ===\n")
             topLevelFunctions.forEach { fn ->
-                logger.warn("buildDenseReport === Top-level functions === ${fn.name}")
+                logger.warn("=== Top-level functions === ${fn.name}")
                 val testMark = if (fn.isTest) " [TEST]" else ""
                 codeRes.append(" - ${fn.name}${fn.header}$testMark\n")
             }

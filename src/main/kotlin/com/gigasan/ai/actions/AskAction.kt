@@ -1,7 +1,7 @@
 package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.ProjectSpecificSettings
+import com.gigasan.ai.config.ProjectSettings
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -22,8 +22,8 @@ class AskAction : AnAction("Ask", "Ask local AI", AllIcons.General.Balloon) {
             e.presentation.isEnabledAndVisible = false
             return
         }
-        val state = ProjectSpecificSettings.getInstance(project).state
-        val model = state.selectedModelName
+        val state = ProjectSettings.getInstance(project).state
+        val model = settings.getSettingsFor(state.backendEndpoint).selectedModelName
         val dynamicText = if (model.isNotBlank()) {
             "Ask Local AI ($model)"
         } else {

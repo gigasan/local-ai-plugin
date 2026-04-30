@@ -1,5 +1,6 @@
 package com.gigasan.ai.runtime
 
+import com.gigasan.ai.runtime.parser.Usage
 import com.gigasan.ai.ui.chat.TaskStatus
 import kotlin.math.roundToLong
 
@@ -78,7 +79,7 @@ object AIMetrics {
         return "$statusLine$requestLine$contentLine"
     }
 
-    fun buildHint(
+    fun buildFooter(
         durationMs: Long?,
         usage: Usage?,
     ): String {
@@ -88,7 +89,7 @@ object AIMetrics {
         val tps = usage?.tokens_per_second
 
         val input = usage?.inputTokens
-        val reasoning = usage?.reasoning_tokens
+        val reasoning = usage?.reasoningTokens
         val output = usage?.outputTokens
 
         val result = if (output != null && reasoning != null) {
