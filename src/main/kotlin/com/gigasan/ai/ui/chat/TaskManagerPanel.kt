@@ -24,7 +24,7 @@ enum class TaskStatus {
 data class TaskData(
     val id: String,
     var title: String,
-    var hint: String,
+    var footer: String,
     var content: String,
     var zoneType: String,
     var request: String,

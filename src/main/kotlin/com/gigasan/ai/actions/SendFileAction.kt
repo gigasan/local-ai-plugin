@@ -1,7 +1,7 @@
 package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.ProjectSpecificSettings
+import com.gigasan.ai.config.ProjectSettings
 import com.gigasan.ai.ui.FileChooserDialog
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -55,8 +55,8 @@ class SendFileAction : AnAction("FileChooserDialog", "Open FileChooserDialog", A
         //e.presentation.isEnabledAndVisible = editor?.selectionModel?.selectedText?.isNotBlank() == true
 
 
-        val state = ProjectSpecificSettings.getInstance(project).state
-        val model = state.selectedModelName
+        val state = ProjectSettings.getInstance(project).state
+        val model = settings.getSettingsFor(state.backendEndpoint).selectedModelName
         e.presentation.isEnabled = model.isNotBlank()
         e.presentation.isEnabledAndVisible = settings.state.enableFileTransfer
     }

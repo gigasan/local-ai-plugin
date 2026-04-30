@@ -17,6 +17,9 @@ import okhttp3.OkHttpClient
 import org.jetbrains.kotlin.tools.projectWizard.core.toResult
 import com.fasterxml.jackson.annotation.JsonAlias
 import com.gigasan.ai.core.JsonFileLogger
+import com.gigasan.ai.runtime.parser.LMStats
+import com.gigasan.ai.runtime.parser.ResponseResult
+import com.gigasan.ai.runtime.parser.Usage
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -30,7 +33,7 @@ class ClientStream(
     private val stateManager: StateManager,
     private val stateMachine: StateMachine,
 ): JsonFileLogger {
-    fun execute(project: Project, ctx: ChatContext, indicator: ProgressIndicator, onEvent: (StreamEvent) -> Unit): Result {
+    fun execute(project: Project, ctx: ChatContext, indicator: ProgressIndicator, onEvent: (StreamEvent) -> Unit): ResponseResult {
         // Получаем контекст со всеми инструментами под конкретный бэкенд
         val context = adapter.getContext(ctx, stateManager, stateMachine)
         val call = http.newCall(context.request)
@@ -44,7 +47,7 @@ class ClientStream(
             // Если сервер вернул ошибку сразу (не 200)
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string() ?: "Unknown error"
-                saveJson(project, "error_response", errorBody)
+                //saveJson(project, "error_response", errorBody)
                 return context.parser(errorBody) // Используем штатный парсер для ошибки
             }
 
@@ -73,19 +76,18 @@ class ClientStream(
                             onEvent(event)
                         }
                     }
+                    // СОХРАНЯЕМ ДЕБАГ-ЛОГ (SSE протокол)
+                    saveJson(project, "raw_network_stream", rawFullResponse.toString())
                 } else {
-                    // Логика для обычного JSON: читаем всё сразу
+                    // Логика для обычного JSON: читаем всё сразу, парсим и выходим
                     val fullJson = source.readUtf8()
-                    rawFullResponse.append(fullJson)
+                    return context.parser(fullJson)
 
-                    val result = context.parser(fullJson)
-                    saveJson(project, "raw_json_result", result.raw)
-                    builder.setRaw(result.raw)
+                    //rawFullResponse.append(fullJson)
+                    //saveJson(project, "raw_json_result", result.raw)
+                    //builder.setRaw(result.raw)
                 }
             }
-
-        // СОХРАНЯЕМ ДЕБАГ-ЛОГ (SSE протокол)
-        saveJson(project, "raw_network_stream", rawFullResponse.toString())
 
 //            // БИЛДЕР ТЕПЕРЬ СТРОИТ ЧИСТЫЙ ОТВЕТ
 //            val finalResult = builder.build()
@@ -110,9 +112,10 @@ class ClientStream(
             if (rawFullResponse.isNotEmpty()) {
                 saveJson(project, "error_partial_response", rawFullResponse.toString())
             }
-            logger.error("Stream execution failed", e)
+            logger.warn("Stream execution failed", e)
             throw e
         }
+        //return TODO("Provide the return value")
     }
 
 
@@ -425,7 +428,7 @@ class StreamParser(private val project: Project) : JsonFileLogger {
 }
 
 
-class ResultBuilder(val parser: (String) -> Result) {
+class ResultBuilder(val parser: (String) -> ResponseResult) {
     private var finalPayload: Any? = null
     private var rawContent: String = ""
 
@@ -579,7 +582,7 @@ class ResultBuilder(val parser: (String) -> Result) {
         }
     }
 
-    fun build(): Result {
+    fun build(): ResponseResult {
         if (rawContent.startsWith("{")) {
             return parser(rawContent) // Теперь тут гарантированно чистый JSON объекта
         }
@@ -597,7 +600,7 @@ class ResultBuilder(val parser: (String) -> Result) {
         // Если есть накопленный сырой ответ (весь поток), парсим его целиком
         if (rawContent.isNotBlank()) {
             try {
-                // Ваш парсер из Result.kt сам разберется, какой это формат
+                // Ваш парсер сам разберется, какой это формат
                 return parser(rawContent)
             } catch (e: Exception) {
                 logger.warn("AIResponseParser failed to parse rawContent, using manual assembly: ${e.message}")
@@ -606,13 +609,13 @@ class ResultBuilder(val parser: (String) -> Result) {
         }
 
         // 2. Fallback: если это был обычный SSE стрим с чанками "data:",
-        // собираем Result из накопленных в append() данных
-        return Result(
+        // собираем ResponseResult из накопленных в append() данных
+        return ResponseResult.Success(
             text = finalText?:text?:output.toString(),
             usage = Usage(
                 inputTokens = stats?.input_tokens,
                 outputTokens = stats?.total_output_tokens,
-                reasoning_tokens = stats?.reasoning_output_tokens,
+                reasoningTokens = stats?.reasoning_output_tokens,
                 totalTokens = stats?.total_output_tokens,
                 tokens_per_second = stats?.tokens_per_second,
                 time_to_first_token_seconds = stats?.time_to_first_token_seconds,

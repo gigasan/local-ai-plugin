@@ -4,17 +4,7 @@ import com.gigasan.ai.config.BackendEngine.*
 import com.gigasan.ai.config.BackendApi.*
 
 
-enum class BackendEndpoints(val engine: BackendEngine, val api: BackendApi) {
-
-    /*
-        Open AI endpoints
-            completions → устарел
-            chat/completions → текущий стандарт
-            responses → следующее поколение (superset)
-    */
-
-    //OPEN_AI_COMPATIBLE(2, "OpenAI-compatible API"), // https://developers.openai.com/api/reference/overview, https://creator.poe.com/docs/external-applications/openai-compatible-api
-    //ANTHROPIC_COMPATIBLE(3, "Anthropic-compatible API"); // https://platform.claude.com/docs/en/api/overview, https://creator.poe.com/docs/external-applications/anthropic-compatible-api
+enum class BackendEndpoint(val engine: BackendEngine, val api: BackendApi) {
 
     LM_STUDIO_ENDPOINT(LM_STUDIO, LM_STUDIO_API),
     LM_STUDIO_OPENAI_ENDPOINT(LM_STUDIO, OPEN_AI_API),
@@ -26,6 +16,10 @@ enum class BackendEndpoints(val engine: BackendEngine, val api: BackendApi) {
 
     OPEN_AI_ENDPOINT(OPEN_AI, OPEN_AI_API),
     CLAUDE_ENDPOINT(CLAUDE, CLAUDE_API);
+
+
+//    var settings = EndpointSettings()
+//        get() {}
 
     val displayName: String
     get() = when (this) {
@@ -156,6 +150,6 @@ enum class BackendEndpoints(val engine: BackendEngine, val api: BackendApi) {
 
     companion object {
         fun getFor(backend: BackendEngine, api: BackendApi) = values().filter { it.engine == backend && it.api == api }
-        fun fromId(engineId: Int, apiId: Int) = BackendEndpoints.entries.find { it.engine.id == engineId && it.api.id == apiId }
+        fun fromId(engineId: Int, apiId: Int) = BackendEndpoint.entries.find { it.engine.id == engineId && it.api.id == apiId }
     }
 }

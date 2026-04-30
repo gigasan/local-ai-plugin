@@ -8,6 +8,7 @@ import com.gigasan.ai.actions.RefactorAction
 import com.gigasan.ai.actions.SendFileAction
 import com.gigasan.ai.config.PluginConfigProvider
 import com.gigasan.ai.config.PluginSettings
+import com.gigasan.ai.core.wrapCode
 import com.gigasan.ai.runtime.ClientStream
 import com.gigasan.ai.runtime.AIMetrics
 import com.gigasan.ai.runtime.BackendAdapter
@@ -18,6 +19,8 @@ import com.gigasan.ai.runtime.MemorySystem
 import com.gigasan.ai.runtime.StateMachine
 import com.gigasan.ai.runtime.StateManager
 import com.gigasan.ai.runtime.StreamEvent
+import com.gigasan.ai.runtime.parser.ResponseResult
+import com.gigasan.ai.runtime.parser.withDuration
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
@@ -133,7 +136,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 answer = "",
                 status = TaskStatus.CREATED,
                 reasoning = "",
-                hint = "",
+                footer = "",
             )
             return task
         }
@@ -403,7 +406,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                             answer = "",
                             status = TaskStatus.ERROR,
                             reasoning = "",
-                            hint = "",
+                            footer = "",
                         )
                         taskManagerPanel.addTask(task)
                         event.dropComplete(true)
@@ -426,7 +429,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                                 answer = "",
                                 status = TaskStatus.CREATED,
                                 reasoning = "",
-                                hint = "",
+                                footer = "",
                             )
                         } else {
                             // any other data
@@ -447,7 +450,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                                 answer = "",
                                 status = TaskStatus.CREATED,
                                 reasoning = "",
-                                hint = "",
+                                footer = "",
                             )
                         }
                         taskManagerPanel.addTask(task)
@@ -456,7 +459,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                         event.rejectDrop()
                     }
                 } catch (e: Exception) {
-                    logger.error(e)
+                    logger.warn(e)
                     event.rejectDrop()
                 }
             }
@@ -659,7 +662,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             if (task.id.isNotBlank()) {
                 append("<div class='footer'>")
                 append(HtmlProcessor.getFormatedTime(task.id))
-                append("\n\n${task.hint}")
+                append("\n\n${task.footer}")
                 append("</div>")
             }
             append("</details>\n")
@@ -738,18 +741,18 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     fun processTask(task: TaskData, indicator: ProgressIndicator): TaskResult {
         return try {
             val model = provider.buildChatModel()
-            logger.info("task = $task")
-            logger.info("model = $model")
+            //logger.info("task = $task")
+            //logger.info("model = $model")
             val request = "${task.request} ${task.content}".trimIndent()
             val chatContext = ChatRequestBuilder(project)
-                .system(provider.buildSystem())
+                .system(provider.buildChatSystem())
                 .memory(limit = 5)
                 .user(request)
                 .stream(provider.buildStream())
                 .model(model)
                 .maxTokens(provider.buildMaxTokenLimit())
                 .build(task)
-            logger.warn("chatContext = $chatContext")
+            logger.info("$chatContext")
             val stateManager = StateManager()
             val stateMachine = StateMachine()
             val adapter = BackendAdapter(project)
@@ -762,28 +765,48 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             )
             //val toolClient = ToolOrchestrator(AIClientPost()) // url, api and backend from PluginSettings
             val startTime = System.currentTimeMillis()
-            val aiResult = clientStream.execute(project, chatContext, indicator) { event ->
+            val responseResult = clientStream.execute(project, chatContext, indicator) { event ->
                 onStreamEvent(event, indicator)
             }
 
             //val toolResult = toolClient.run(chatContext)
             //logger.warn("toolResult = $toolResult")
             val endTime = System.currentTimeMillis()
-            val result = aiResult.copy(durationMs = endTime - startTime)
+            val result = responseResult.withDuration(endTime - startTime)
 
             val updated = task.copy(
-                answer = result.text,
-                hint = AIMetrics.buildHint(
-                    usage = result.usage,
+                title = when (result) {
+                    is ResponseResult.Success -> {
+                        "✔\uFE0F${task.title}"
+                    }
+                    is ResponseResult.Error -> {
+                        "❌${task.title}"
+                    }
+                },
+                answer = when (result) {
+                    is ResponseResult.Success -> {
+                        result.text
+                    }
+                    is ResponseResult.Error -> {
+                        result.message
+                    }
+                },
+
+                footer = AIMetrics.buildFooter(
+                    usage = if (result is ResponseResult.Success) { result.usage} else {null},
                     durationMs = result.durationMs
                 ),
-//                description = AIMetrics.buildDescription(
-//                    request = task.request,
-//                    content = task.content,
-//                    status = task.status,
-//                ),
-                reasoning = result.reasoning?.trim() ?:"",
-                status = TaskStatus.DONE,
+
+                reasoning = if (result is ResponseResult.Success) { result.reasoning?.trim()?:""} else {""},
+
+                status = when (result) {
+                    is ResponseResult.Success -> {
+                        TaskStatus.DONE
+                    }
+                    is ResponseResult.Error -> {
+                        TaskStatus.ERROR
+                    }
+                },
             )
 
             TaskResult.Success(updated)
@@ -791,7 +814,8 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             TaskResult.Error(
                 task.copy(
                     status = TaskStatus.ERROR,
-                    //description = "❌Ошибка:** ${e.message}"
+                    title = "❌${task.title}",
+                    answer = wrapCode(e.message?:"unknown error"),
                 ),
                 e)
         }
@@ -916,7 +940,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
     fun sendExternalMessage(text: String, request: String = "") {
         val task = buildTaskFromString(text, request)
-        logger.info("task=${task}")
         taskManagerPanel.addTask(task)
         updateTaskStatus(task, TaskStatus.SENDING)
         runTaskInBackground(project, task) { updatedTask ->
@@ -1512,8 +1535,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         //        }
 
         jsQuery.addHandler { queryResult: String ->
-            if (!isAutoSearchEnabled) return@addHandler null
-
             // Проверяем, что это НЕ команда для второго обработчика
             val isCommand = queryResult.startsWith("click:") ||
                     queryResult.startsWith("hover:") ||
@@ -1526,9 +1547,11 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     searchField?.selectAll()
                     searchField?.requestFocusInWindow()
 
-                    // Сразу запускаем поиск (опционально — можно убрать, если хочешь только заполнить поле)
-                    jbCefBrowser.cefBrowser.find(queryResult.trim(), true, false, false)
-                    searchPanel.isVisible = true
+                    if (isAutoSearchEnabled) {
+                        // Сразу запускаем поиск (опционально — можно убрать, если хочешь только заполнить поле)
+                        jbCefBrowser.cefBrowser.find(queryResult.trim(), true, false, false)
+                        searchPanel.isVisible = true
+                    }
                 }
             }
             null  // Даем пройти в handleJsQuery, если нужно
@@ -1572,7 +1595,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     // Функция для инъекции bridge + загрузки твоего JS
     private fun injectTaskHandlers(cefBrowser: CefBrowser?) {
         if (!::jsQuery.isInitialized) {
-            logger.error("jsQuery ещё не инициализирован")
+            logger.warn("jsQuery ещё не инициализирован")
             return
         }
 

@@ -1,5 +1,8 @@
 package com.gigasan.ai.core
 
+import com.gigasan.ai.config.PluginSettings
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import java.io.File
 import java.time.LocalDateTime
@@ -16,14 +19,14 @@ interface JsonFileLogger {
         private val logger = Logger.getInstance("JsonFileLogger")
     }
 
-    fun saveJson(project: Project, prefix: String, content: String, prefixIdx: Int? = null) {
+    public fun saveJson(project: Project, prefix: String, content: String, prefixIdx: Int? = null) {
         try {
             val projectPath = project.basePath?:return
             val logsFolder = File(projectPath, "json_logs")
             if (!logsFolder.exists()) {
                 val created = logsFolder.mkdirs()
                 if (!created) {
-                    logger.error("Could not create directory: ${logsFolder.absolutePath}")
+                    logger.warn("Could not create directory: ${logsFolder.absolutePath}")
                 }
             }
             val timestamp = LocalDateTime.now().format(timestampFormatter)
@@ -41,7 +44,10 @@ interface JsonFileLogger {
             logger.info("JSON successfully saved to: ${targetFile.absolutePath}")
         } catch (e: Exception) {
             // Используем стандартный println или ваш логгер
-            logger.error("Failed to save JSON: ${e.message}")
+            logger.warn("Failed to save JSON: ${e.message}")
         }
     }
 }
+
+// Объект, который дает доступ к методам интерфейса без создания классов
+object FileLogger : JsonFileLogger

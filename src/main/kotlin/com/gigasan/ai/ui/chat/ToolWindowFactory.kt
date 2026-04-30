@@ -1,12 +1,8 @@
 package com.gigasan.ai.ui.chat
 
-import com.gigasan.ai.actions.AnalyzeAction
-import com.gigasan.ai.actions.AskAction
-import com.gigasan.ai.actions.SendFileAction
-import com.gigasan.ai.actions.RefactorAction
 import com.gigasan.ai.config.PluginSettings
 import com.gigasan.ai.config.PluginSettingsConfigurable
-import com.gigasan.ai.config.ProjectSpecificSettings
+import com.gigasan.ai.config.ProjectSettings
 import com.gigasan.ai.config.SettingsChangeListener
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
@@ -17,7 +13,6 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.options.ShowSettingsUtil
 import javax.swing.SwingUtilities
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.application.ApplicationManager
 
 class ChatToolWindowFactory : ToolWindowFactory {
 
@@ -60,7 +55,8 @@ class ChatToolWindowFactory : ToolWindowFactory {
     }
 
     fun updateToolWindowTitle(toolWindow: ToolWindow) {
-        val name = ProjectSpecificSettings.getInstance(toolWindow.project).state.selectedModelName
+        val endpoint = ProjectSettings.getInstance(toolWindow.project).state.backendEndpoint
+        val name = PluginSettings().getSettingsFor(endpoint).selectedModelName
         toolWindow.title = if (name.isNotBlank()) "$name" else ""
     }
 }
