@@ -1,14 +1,13 @@
-package com.gigasan.ai.config
+package com.gigasan.ai.config.storage
 
+import com.gigasan.ai.config.BackendEndpoint
+import com.gigasan.ai.config.SettingsChangeListener
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.*
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.observable.properties.GraphProperty
 import com.intellij.openapi.observable.properties.PropertyGraph
-import com.intellij.ui.dsl.builder.MutableProperty
 import com.intellij.util.xmlb.annotations.XMap
-import com.jetbrains.rd.platform.util.logger
-import kotlin.properties.ObservableProperty
 
 // 1. Указываем имя файла, в котором будут лежать настройки (в папке конфигов IDE)
 @State(name = "com.gigasan.localai.config.PluginSettings", storages = [Storage("PluginSettings.xml")])
@@ -22,7 +21,8 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
 
         // toolbar actions
         var enableDebugFeature: Boolean = true,
-        var enableFileTransfer: Boolean = true,
+        var enableSendTask: Boolean = true,
+        var enableFileTransfer: Boolean = false,
         var enableRefactoring: Boolean = false,
         var enableCodeAnalysis: Boolean = false,
         var enableCleanChat: Boolean = true,

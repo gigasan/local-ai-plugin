@@ -1,17 +1,24 @@
 package com.gigasan.ai.config
 
+import com.gigasan.ai.config.storage.EndpointSettings
+import com.gigasan.ai.config.storage.Model
+import com.gigasan.ai.config.storage.ModelCache
+import com.gigasan.ai.config.storage.ModelCacheService
+import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.ProjectSettings
 import com.intellij.openapi.diagnostic.Logger
-//import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
-//import com.intellij.util.ui.FormBuilder
 import com.intellij.openapi.project.Project
 import com.intellij.ui.MutableCollectionComboBoxModel
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.builder.bindItem
 import com.gigasan.ai.core.JsonFileLogger
+import com.gigasan.ai.ui.ModelSettingsPanel
 import com.intellij.ui.components.JBPasswordField
+import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
+import com.intellij.util.ui.FontInfo
 import okhttp3.internal.toLongOrDefault
 
 class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Local AI Settings"), JsonFileLogger {
@@ -62,7 +69,8 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
         }
         
         // Передаем this и контейнер компонентов
-        modelSettingsPanel = createModelSettingsPanel(msp)
+        modelSettingsPanel = msp.createModelSettingsPanel(msp)
+
 
         logger.info("createPanel enter")
 
@@ -103,7 +111,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                             updateDependentCombos(msp.selectedEndpoint, msp.endpointSettings, modelCache)
                             refreshUIFromModel(msp)
                             apiKeyField.component.text = msp.endpointSettings.apiKey
-                            loadModelsAsync(project, msp.selectedEndpoint, msp)
+                            msp.loadModelsAsync(project, msp.selectedEndpoint, msp)
                         }
                 }
                 row("API Key:") {
@@ -186,7 +194,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
             }
 
             // Endpoint Settings
-            row { cell(modelSettingsPanel).align(AlignX.FILL) }
+            row { cell(modelSettingsPanel).align(AlignX.FILL) }.customize(UnscaledGapsY(top = 20, bottom = 20))
 
             collapsibleGroup("Chat Settings (Project Dependent)") {
                 row("System prompt:") {
@@ -205,8 +213,33 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                 }
             }
 
-            collapsibleGroup("Prompts Settings") {
-
+            collapsibleGroup("") {
+                val intellijFonts = FontInfo.getAll(false).map { it.font.family }.toTypedArray()
+                // Только моноширинные шрифты (для кода)
+                val monoFonts = FontInfo.getAll(true).map { it.font.family }.toTypedArray()
+                row("Editor:") {
+                    label("Font family:")
+                    comboBox(monoFonts.toList())
+                        .bindItem(
+                            getter = { projectSettings.state.fontName },
+                            setter = { value: String? -> projectSettings.state.fontName = value?:"" }
+                            )
+                    label("Size:")
+                    spinner(8..72)
+                        .bindIntValue(projectSettings.state::fontSize)
+                    checkBox("Wrap lines")
+                        .bindSelected(
+                            getter = { projectSettings.state.useSoftWrap },
+                            setter = { value: Boolean -> projectSettings.state.useSoftWrap = value }
+                        )
+                }
+                row("Enqueue:") {
+                    checkBox("Select entire lines")
+                        .bindSelected(
+                            getter = { projectSettings.state.selectEntireLines },
+                            setter = { value: Boolean -> projectSettings.state.selectEntireLines = value }
+                        )
+                }
             }.apply {
                 // Разворачиваем группу сразу после создания
                 expanded = projectSettings.state.promptsExpanded
@@ -218,7 +251,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
 
 
             // Запускаем загрузку моделей сразу при создании панели
-            loadModelsAsync(project, projectSettings.state.backendEndpoint, msp)
+            msp.loadModelsAsync(project, projectSettings.state.backendEndpoint, msp)
 
             // Кастомные callbacks
             onApply {

@@ -1,8 +1,8 @@
 package com.gigasan.ai.actions
 
+import com.gigasan.ai.config.DefaultChatConfigProvider
 import com.gigasan.ai.ui.RefactorDialog
-import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.ProjectSettings
+import com.gigasan.ai.config.storage.PluginSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -31,8 +31,8 @@ class RefactorAction: AnAction("Refactor", "Send/Find code block from project to
             e.presentation.isEnabledAndVisible = false
             return
         }
-        val state = ProjectSettings.getInstance(project).state
-        val model = settings.getSettingsFor(state.backendEndpoint).selectedModelName
+        val prov = DefaultChatConfigProvider(project)
+        val model = prov.buildEndpointSetting().selectedModelName
         val dynamicText = if (model.isNotBlank()) {
             "Refactor with Local AI ($model)"
         } else {

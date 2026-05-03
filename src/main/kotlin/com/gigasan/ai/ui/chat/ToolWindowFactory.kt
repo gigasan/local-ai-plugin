@@ -1,8 +1,7 @@
 package com.gigasan.ai.ui.chat
 
-import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.PluginSettingsConfigurable
-import com.gigasan.ai.config.ProjectSettings
+import com.gigasan.ai.config.DefaultChatConfigProvider
+import com.gigasan.ai.config.storage.PluginSettings
 import com.gigasan.ai.config.SettingsChangeListener
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
@@ -13,6 +12,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.options.ShowSettingsUtil
 import javax.swing.SwingUtilities
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.application.ApplicationManager
 
 class ChatToolWindowFactory : ToolWindowFactory {
 
@@ -37,10 +37,10 @@ class ChatToolWindowFactory : ToolWindowFactory {
 
         val settingsAction = object: AnAction("Settings", "Settings", AllIcons.General.Settings) {
             override fun actionPerformed(e: AnActionEvent) {
-                ShowSettingsUtil.getInstance().showSettingsDialog(
-                    e.project,
-                    PluginSettingsConfigurable::class.java
-                )
+                val project = e.project ?: return
+                ApplicationManager.getApplication().invokeLater {
+                    ShowSettingsUtil.getInstance().showSettingsDialog(project, "LocalAI.Settings")
+                }
             }
         }
 
@@ -55,8 +55,8 @@ class ChatToolWindowFactory : ToolWindowFactory {
     }
 
     fun updateToolWindowTitle(toolWindow: ToolWindow) {
-        val endpoint = ProjectSettings.getInstance(toolWindow.project).state.backendEndpoint
-        val name = PluginSettings().getSettingsFor(endpoint).selectedModelName
-        toolWindow.title = if (name.isNotBlank()) "$name" else ""
+        val prov = DefaultChatConfigProvider(toolWindow.project)
+        val model = prov.buildEndpointSetting().selectedModelName
+        toolWindow.title = if (model.isNotBlank()) model else ""
     }
 }

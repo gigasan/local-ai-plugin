@@ -1,4 +1,4 @@
-package com.gigasan.ai.config
+package com.gigasan.ai.config.storage
 
 import com.intellij.util.xmlb.annotations.Tag
 

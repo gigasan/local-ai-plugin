@@ -3,8 +3,8 @@ package com.gigasan.ai.actions
 import com.intellij.openapi.ui.Messages
 import com.gigasan.ai.analysis.KotlinProjectAnalyzer
 import com.gigasan.ai.analysis.RustProjectAnalyzer
-import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.ProjectSettings
+import com.gigasan.ai.config.DefaultChatConfigProvider
+import com.gigasan.ai.config.storage.PluginSettings
 import com.gigasan.ai.core.projectHasKotlinSource
 import com.gigasan.ai.ui.RefactorDialog
 import com.intellij.icons.AllIcons
@@ -36,8 +36,9 @@ class AnalyzeAction : AnAction("Analyze Project", "Scan project and open refacto
             e.presentation.isEnabledAndVisible = false
             return
         }
-        val state = ProjectSettings.getInstance(project).state
-        val model = settings.getSettingsFor(state.backendEndpoint).selectedModelName
+        val prov = DefaultChatConfigProvider(project)
+        val model = prov.buildEndpointSetting().selectedModelName
+
 //        val dynamicText = if (model.isNotBlank()) {
 //            "Refactor with Local AI ($model)"
 //        } else {

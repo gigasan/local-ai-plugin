@@ -28,7 +28,7 @@
         <projectService
                 serviceInterface="com.gigasan.ai.config.PluginConfigProvider"
                 serviceImplementation="com.gigasan.ai.config.DefaultChatConfigProvider"/>
-        <applicationService serviceImplementation="com.gigasan.ai.config.PluginSettings"/>
+        <applicationService serviceImplementation="com.gigasan.ai.config.storage.PluginSettings"/>
         <projectConfigurable
             instance="com.gigasan.ai.config.PluginSettingsConfigurable"
             displayName="Local AI Chat Settings"
@@ -51,6 +51,12 @@
                 class="com.gigasan.ai.actions.AskAction"
                 text="Ask Local AI Model"
                 description="Send selected text into AI chat">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+        <action id="LocalAI.Enqueue"
+                class="com.gigasan.ai.actions.EnqueueAction"
+                text="Enqueue the Task Local AI Model"
+                description="Send selected text into AI task">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
         <action id="LocalAI.Refactor"
