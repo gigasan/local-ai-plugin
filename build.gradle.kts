@@ -33,7 +33,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
     implementation("org.xerial:sqlite-jdbc:3.45.2.0")
-    implementation("org.eclipse.jgit:org.eclipse.jgit:6.9.0.202403050737-r")
+    implementation("org.eclipse.jgit:org.eclipse.jgit:7.2.1.202505142326-r")
     intellijPlatform {
         intellijIdea(targetVersion)
         bundledPlugin("com.intellij.java")

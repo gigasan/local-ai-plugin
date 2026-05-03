@@ -1,14 +1,10 @@
 package com.gigasan.ai.core
 
-import com.gigasan.ai.config.PluginSettings
-import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import com.intellij.openapi.project.Project
-import com.intellij.platform.ide.progress.ModalTaskOwner.project
 
 interface JsonFileLogger {
 

@@ -1,7 +1,7 @@
 package com.gigasan.ai.actions
 
-import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.ProjectSettings
+import com.gigasan.ai.config.DefaultChatConfigProvider
+import com.gigasan.ai.config.storage.PluginSettings
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -10,7 +10,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.diagnostic.Logger
 
 class AskAction : AnAction("Ask", "Ask local AI", AllIcons.General.Balloon) {
-    private val logger = Logger.getInstance("SendFileAction")
+    private val logger = Logger.getInstance("AskAction")
     private val settings = PluginSettings()
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -22,8 +22,8 @@ class AskAction : AnAction("Ask", "Ask local AI", AllIcons.General.Balloon) {
             e.presentation.isEnabledAndVisible = false
             return
         }
-        val state = ProjectSettings.getInstance(project).state
-        val model = settings.getSettingsFor(state.backendEndpoint).selectedModelName
+        val prov = DefaultChatConfigProvider(project)
+        val model = prov.buildEndpointSetting().selectedModelName
         val dynamicText = if (model.isNotBlank()) {
             "Ask Local AI ($model)"
         } else {

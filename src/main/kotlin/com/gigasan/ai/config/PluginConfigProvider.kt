@@ -1,17 +1,26 @@
 package com.gigasan.ai.config
 
+import com.gigasan.ai.config.storage.EndpointSettings
+import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.ProjectSettings
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 
 interface PluginConfigProvider {
+
+    // local
+    fun buildChatSystem(): String
+    fun buildSelectWholeLone(): Boolean
+    fun buildUseSoftWrap(): Boolean
+
+    // endpoint
     fun buildBackend(): BackendEndpoint
     fun buildEndpointSetting(): EndpointSettings
     fun buildUrl(): String
     fun buildChatEndpoint(): String
     fun buildChatModel(): String
-
     fun buildApiKey(): String
     fun buildMaxTokenLimit(): Int
     fun buildKeepAlive(): Int
@@ -19,15 +28,25 @@ interface PluginConfigProvider {
     fun buildMaxContext(): Int
     fun buildStream(): Boolean
     fun buildSystem(): String
-    fun buildChatSystem(): String
     fun buildRequestBody(prompt: String): JsonObject
     fun buildExtraParams(prompt: String): JsonObject
+
 }
 
 @Service(Service.Level.PROJECT) // Без регистрации в plugin.xml!
 class DefaultChatConfigProvider(private val project: Project): PluginConfigProvider {
     private val global = PluginSettings.instance
     private val local = ProjectSettings.getInstance(project).state
+
+    override fun buildChatSystem(): String {
+        return local.chatSystemPrompt
+    }
+    override fun buildSelectWholeLone(): Boolean {
+        return local.selectEntireLines.or(false)
+    }
+    override fun buildUseSoftWrap(): Boolean {
+        return local.useSoftWrap.or(false)
+    }
 
     /**
      * Формирует URL в зависимости от baseUrl и chatEndpointIndex.
@@ -70,10 +89,6 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
 
     override fun buildSystem(): String {
         return buildEndpointSetting().system
-    }
-
-    override fun buildChatSystem(): String {
-        return local.chatSystemPrompt
     }
 
     override fun buildBackend(): BackendEndpoint {

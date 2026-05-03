@@ -6,8 +6,9 @@ import com.gigasan.ai.actions.AutoSearchToggleAction
 import com.gigasan.ai.actions.CleanChatAction
 import com.gigasan.ai.actions.RefactorAction
 import com.gigasan.ai.actions.SendFileAction
+import com.gigasan.ai.actions.SendTaskAction
 import com.gigasan.ai.config.PluginConfigProvider
-import com.gigasan.ai.config.PluginSettings
+import com.gigasan.ai.config.storage.PluginSettings
 import com.gigasan.ai.core.wrapCode
 import com.gigasan.ai.runtime.ClientStream
 import com.gigasan.ai.runtime.AIMetrics
@@ -162,6 +163,9 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
         if (settings.state.enableFileTransfer) {
             mainGroup.add(SendFileAction())
+        }
+        if (settings.state.enableSendTask) {
+            mainGroup.add(SendTaskAction())
         }
         if (settings.state.enableRefactoring) {
             mainGroup.add(RefactorAction())

@@ -1,5 +1,7 @@
 package com.gigasan.ai.config
 
+import com.gigasan.ai.config.storage.Model
+import com.gigasan.ai.config.storage.Source
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.util.xmlb.annotations.Attribute
@@ -9,29 +11,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
-@Tag("ModelCache")
-data class ModelCache(
-    // Обязательно @XCollection для списков объектов
-    @XCollection(style = XCollection.Style.v2)
-    var models: List<Model> = listOf(),
-    @Attribute("timestamp") var timestamp: Long = 0
-)
 
-enum class Source { LM_STUDIO, OLLAMA, OPEN_AI }
-
-@Tag("Model")
-data class Model(
-    @Attribute("source") var source: Source = Source.LM_STUDIO,
-    @Attribute("key") var key: String = "",
-    @Attribute("name") var displayName: String = "",
-    @Attribute("size") var size: Long = 0,
-    @Attribute("format") var format: String = "",
-    @Attribute("quant") var quant: String = "",
-    @Attribute("params") var params: String = "",
-    @Attribute("arc") var arc: String = "",
-    @Attribute("maxContext") var maxContext: Int = 0,
-    @Attribute("tools") var tools: Boolean = false
-)
 
 
 //data class Model( // LM Studio or Ollama

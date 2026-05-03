@@ -1,7 +1,13 @@
-package com.gigasan.ai.config
+package com.gigasan.ai.config.storage
 
+import com.gigasan.ai.config.BackendEndpoint
+import com.gigasan.ai.config.SettingsChangeListener
+import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.State
+import com.intellij.openapi.components.Storage
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.components.*
 
 // 1. Указываем имя файла, в котором будут лежать настройки (в папке конфигов IDE)
 @State(name = "com.gigasan.localai.config.ProjectSettings", storages = [Storage("ProjectSettings.xml")])
@@ -22,11 +28,17 @@ class ProjectSettings(private val project: Project) : PersistentStateComponent<P
         // chat system prompt
         var chatSystemPrompt: String = "",
 
+        var selectEntireLines: Boolean = true,
+        var useSoftWrap: Boolean = true,
+        var fontName: String = "JetBrains Mono",
+        var fontSize: Int = 13,
+
+
         // Карта для хранения любых доп. параметров: "temperature" -> "0.7", "top_p" -> "0.9"
         var extraParameters: MutableMap<String, String> = mutableMapOf(),
         var customParams: MutableMap<String, String> = mutableMapOf(),
 
-    )
+        )
 
     var myState = State() // Доступ к полям будет через settings.state.baseUrl
 

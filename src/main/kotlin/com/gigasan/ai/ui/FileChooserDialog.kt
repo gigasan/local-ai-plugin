@@ -1,19 +1,11 @@
 ﻿package com.gigasan.ai.ui
 
-import com.anthropic.client.okhttp.AnthropicOkHttpClient
-import com.gigasan.ai.config.Model
-import com.gigasan.ai.config.ModelSettingsPanel
-import com.gigasan.ai.config.PluginSettings
-import com.gigasan.ai.config.ProjectSettings
-import com.gigasan.ai.config.createModelSettingsPanel
-import com.gigasan.ai.config.loadModelsAsync
-import com.gigasan.ai.ui.chat.ChatPanel
+import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.ProjectSettings
+import com.gigasan.ai.config.storage.PromptSettings
+import com.gigasan.ai.config.storage.Model
 import com.intellij.icons.AllIcons
 import com.intellij.lang.Language
-import com.intellij.openapi.components.PersistentStateComponent
-import com.intellij.openapi.components.State
-import com.intellij.openapi.components.Storage
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
@@ -24,7 +16,6 @@ import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import org.eclipse.jgit.ignore.IgnoreNode
-import java.awt.BorderLayout
 import java.awt.Dimension
 import java.io.File
 import javax.swing.ImageIcon
@@ -45,74 +36,24 @@ import java.awt.image.BufferedImage
 import javax.swing.SwingConstants
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.editor.colors.EditorColorsManager
-import com.intellij.ui.JBSplitter
 import com.intellij.ui.LanguageTextField
-import com.intellij.ui.components.JBCheckBox
 import javax.swing.ScrollPaneConstants
-import java.awt.FlowLayout
 import javax.swing.DefaultComboBoxModel
 import javax.swing.JComboBox
-import javax.swing.JLabel
-import javax.swing.JTextField
 import com.intellij.openapi.ui.Messages
-import com.intellij.openapi.components.Service
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.dsl.builder.AlignX
-import javax.swing.BoxLayout
-import javax.swing.Box
-import javax.swing.JSeparator
-import com.intellij.ui.dsl.builder.BottomGap
-import com.intellij.ui.dsl.builder.Cell
-import com.intellij.ui.dsl.builder.MutableProperty
-import com.intellij.ui.dsl.builder.RightGap
-import com.intellij.ui.dsl.builder.Row
-import com.intellij.ui.dsl.builder.RowLayout
-import com.intellij.ui.dsl.builder.TopGap
-import com.intellij.ui.dsl.builder.bindIntText
-import com.intellij.ui.dsl.builder.bindIntValue
-import com.intellij.ui.dsl.builder.bindItem
-import com.intellij.ui.dsl.builder.bindSelected
+import com.intellij.ui.dsl.builder.AlignY
 import com.intellij.ui.dsl.builder.bindValue
-import com.intellij.ui.dsl.builder.columns
-import com.intellij.ui.dsl.builder.labelTable
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.ui.dsl.builder.selected
-import com.intellij.ui.dsl.builder.showValueHint
-import com.intellij.ui.dsl.builder.toNullableProperty
-import com.intellij.ui.dsl.gridLayout.Gaps
 import com.intellij.ui.dsl.gridLayout.UnscaledGaps
 import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
-import com.intellij.ui.dsl.listCellRenderer.listCellRenderer
-import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.intellij.util.ui.JBUI
 import java.awt.Component
 import javax.swing.DefaultListCellRenderer
 import javax.swing.JList
-import javax.swing.SpinnerNumberModel
-
-
-// ========== Настройки промптов ==========
-@State(name = "com.gigasan.ai.ui.PromptSettings", storages = [Storage("PromptSettings.xml")])
-@Service(Service.Level.APP)
-class PromptSettings : PersistentStateComponent<PromptSettings.State> {
-    data class State(
-        var systems: MutableList<String> = mutableListOf(),
-        var prompts: MutableList<String> = mutableListOf(),
-        var systemExpanded: Boolean = false,
-        var inputExpanded: Boolean = false,
-        var commonExpanded: Boolean = false,
-    )
-
-    private var myState = State()
-    override fun getState(): State = myState
-    override fun loadState(state: State) {
-        myState = state
-    }
-    companion object {
-        val instance: PromptSettings get() = service()
-    }
-}
+import javax.swing.JSlider
 
 class FileChooserDialog(
     private val project: Project,
@@ -204,6 +145,10 @@ class FileChooserDialog(
 
     */
 
+    //var stepIdProp: MutableProperty<Int> = MutableProperty({promptSettings.state.stepId}, {value -> promptSettings.state.stepId = value})
+
+    lateinit var sliderSteps: JSlider
+
 
     // ======================= ПАНЕЛЬ НАСТРОЕК С ПРОМПТАМИ =======================
     private fun createSettingsPanel(): JComponent {
@@ -222,8 +167,7 @@ class FileChooserDialog(
         }
 
         // Передаем this и контейнер компонентов
-        modelSettingsPanel = createModelSettingsPanel(msp)
-
+        modelSettingsPanel = msp.createModelSettingsPanel(msp)
 
         // Инициализируем модели
         systemsModel = DefaultComboBoxModel<String>().apply {
@@ -234,13 +178,11 @@ class FileChooserDialog(
         }
 
         var stepsProperty: Int = 0
-        return panel {
+        val panel = panel {
             // Регистрируем вашу внешнюю панель в жизненном цикле этой DSL панели
             onIsModified { modelSettingsPanel.isModified() }
             onApply { modelSettingsPanel.apply() }
             onReset { modelSettingsPanel.reset() }
-
-
 
             collapsibleGroup("Request Settings") {
 
@@ -299,7 +241,6 @@ class FileChooserDialog(
                             preferredSize = Dimension(26, 26)
                             minimumSize = Dimension(26, 26)
                             putClientProperty("JButton.buttonType", "square")
-                            preferredSize = Dimension(26, 26)
                         }
                     button("") { handleDelete(systemsModel, "Удалить систему?") { saveSystems() } }
                         .customize(UnscaledGaps(left = 8))
@@ -312,7 +253,6 @@ class FileChooserDialog(
                             preferredSize = Dimension(26, 26)
                             minimumSize = Dimension(26, 26)
                             putClientProperty("JButton.buttonType", "square")
-                            preferredSize = Dimension(26, 26)
                         }
                 }
 
@@ -370,7 +310,6 @@ class FileChooserDialog(
                             preferredSize = Dimension(26, 26)
                             minimumSize = Dimension(26, 26)
                             putClientProperty("JButton.buttonType", "square")
-                            preferredSize = Dimension(26, 26)
                         }
                     button("") { handleDelete(promptsModel, "Удалить промпт?") { savePrompts() } }
                         .customize(UnscaledGaps(left = 8))
@@ -383,7 +322,6 @@ class FileChooserDialog(
                             preferredSize = Dimension(26, 26)
                             minimumSize = Dimension(26, 26)
                             putClientProperty("JButton.buttonType", "square")
-                            preferredSize = Dimension(26, 26)
                         }
                 }
             }.apply {
@@ -396,6 +334,121 @@ class FileChooserDialog(
 
 
 
+            val prevStepBtn = JButton("Prev step").apply {
+                addActionListener {
+                    val state = promptSettings.state
+                    if (state.stepId >= 1) {
+                        state.stepId --
+                        sliderSteps.value = state.stepId
+                        sliderSteps.maximum = state.stepIdMax - 1
+                        promptSettings.settingsModified()
+                        previewEditor.text = state.stepsList[state.stepId]?:""
+                    }
+                }
+            }
+
+            val resetStepsBtn = JButton("Reset steps").apply {
+                addActionListener {
+                    val state = promptSettings.state
+                    state.stepsList.fill(null)
+                    state.stepId = 0
+                    sliderSteps.value = state.stepId
+                    sliderSteps.maximum = state.stepIdMax - 1
+                    promptSettings.settingsModified()
+                    previewEditor.text = state.stepsList[state.stepId]?:""
+                }
+            }
+
+            val nextStepBtn = JButton("Next step").apply {
+                addActionListener {
+                    val state = promptSettings.state
+
+                    if (state.stepsList.size < state.stepIdMax) {
+                        state.stepsList = arrayOfNulls(state.stepIdMax)
+                    }
+                    
+                    if (state.stepId < state.stepIdMax - 1 && !state.stepsList[state.stepId+1].isNullOrBlank())
+                    {
+                        state.stepId ++
+                        sliderSteps.value = state.stepId
+                        sliderSteps.maximum = state.stepIdMax - 1
+                        promptSettings.settingsModified()
+                        previewEditor.text = state.stepsList[state.stepId]?:""
+                    }
+                }
+            }
+
+            val addStepDescBtn = JButton("Add Step: Description").apply {
+                addActionListener {
+                    val state = promptSettings.state
+                    val title = "Добавить Новый Шаг"
+
+                    if (state.stepId == state.stepIdMax) {
+                        Messages.showErrorDialog("достигнут лимит ${state.stepId} steps", title)
+                        return@addActionListener
+                    }
+
+                    val msg = "Описание действия:"
+                    val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
+
+                    if (state.stepsList.size < state.stepIdMax) {
+                        state.stepsList = arrayOfNulls(state.stepIdMax)
+                    }
+
+                    logger.info("result=$result stepId=${state.stepId} stepIdMax=${state.stepIdMax} stepList=${state.stepsList.size}")
+                    if (!result.isNullOrBlank() && state.stepId < state.stepIdMax) {
+                        state.stepsList[state.stepId] = result
+                        state.stepId++
+                        //state.stepsList = state.stepsList.copyOf()
+                        promptSettings.settingsModified()
+                        sliderSteps.value = state.stepId
+                        sliderSteps.maximum = state.stepIdMax - 1
+                        logger.info("updated stepId=${state.stepId} stepList=${state.stepsList}  value $result")
+                    }
+                }
+            }
+
+            val addStepDataBtn = JButton("Add Step: Data block ").apply {
+                addActionListener {
+                    val state = promptSettings.state
+                    val title = "Добавить Новый Шаг"
+
+                    if (state.stepId == state.stepIdMax) {
+                        Messages.showErrorDialog("достигнут лимит ${state.stepId} steps", title)
+                        return@addActionListener
+                    }
+
+                    val msg = "Данные:"
+                    val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
+                    if (!result.isNullOrBlank()) {
+
+                        if (state.stepsList.size < state.stepIdMax) {
+                            state.stepsList = arrayOfNulls(state.stepIdMax)
+                        }
+
+                        state.stepsList[state.stepId] = result
+                        state.stepId++
+                        promptSettings.settingsModified()
+                        sliderSteps.value = state.stepId
+                        sliderSteps.maximum = state.stepIdMax - 1
+                    }
+                }
+            }
+
+            val estimateSizeBtn = JButton("Estimate the size").apply {
+                addActionListener {
+                    var sum = 0
+                    var num = 0
+                    promptSettings.state.stepsList.forEach { it ->
+                        if (!it.isNullOrBlank())
+                        {
+                            num += 1
+                            sum += it.length
+                        }
+                    }
+                    Messages.showInfoMessage("estimated size is $sum bytes in $num steps", title)
+                }
+            }
 
 
 
@@ -406,13 +459,14 @@ class FileChooserDialog(
             // --- INPUT НАСТРОЙКИ ---
             collapsibleGroup("Request Features") {
                 row {
-
-                    checkBox("Wrap DATA block")
-
-                    //intTextField(0..100)
                     label("Steps:")
-                    slider(0, 10, 0, 1)  // min, max, minorTickSpacing, majorTickSpacing
-                        //.bindValue(::yourProperty)   // или .bindIntValue если нужно
+                    sliderSteps = slider(0, promptSettings.state.stepIdMax-1, 0, 1)  // min, max, minorTickSpacing, majorTickSpacing
+                        .bindValue(promptSettings.state::stepId)
+                        .onChanged {
+                            promptSettings.state
+                            previewEditor.text = promptSettings.state.stepId.toString()
+                        }
+
                         .apply {
                             val sliderComp = component   // это JBSlider
 
@@ -424,8 +478,30 @@ class FileChooserDialog(
                             sliderComp.minorTickSpacing = 1
                             sliderComp.majorTickSpacing = 2         // цифры будут каждые 2
                         }
+                        .component
+                    sliderSteps.addChangeListener {
+                       // stepIdField.text = sliderSteps.value.toString()
+                    }
+
+                    //.bindValue(::yourProperty)
+                    // или .bindIntValue если нужно
+
+//                    intTextField(0..10,1)
+//                        .bindIntText(stepIdProp)
+
                     //textField().columns(2)
 
+                    cell(prevStepBtn)
+                    cell(resetStepsBtn)
+                    cell(nextStepBtn)
+
+                    cell(addStepDescBtn)
+                    cell(addStepDataBtn)
+                    cell(estimateSizeBtn)
+
+
+//                    panel.add(addStepDataBtn)
+//                    panel.add(estimateSizeBtn)
 
 
 
@@ -455,6 +531,7 @@ class FileChooserDialog(
                 row {
                     checkBox("Current file")
                     checkBox("Current selection")
+                    checkBox("Wrap DATA block")
                     //textField().columns(20).comment("Фильтрация файлов")
                     //button("Обновить дерево") { /* логика */ }
                     //label("Шрифт:")
@@ -472,19 +549,26 @@ class FileChooserDialog(
             }.customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
 
 
-
-
             // Model Settings (Endpoint Dependent)
             row {
                 cell(modelSettingsPanel).align(AlignX.FILL)
-                .customize(UnscaledGaps(bottom = 10)) // Убираем лишнюю пустоту снизу
-            }
+            }.customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
+
+//            collapsibleGroup("Select Files") {
+//            }
+
 
             // Запускаем загрузку моделей сразу при создании панели
-            loadModelsAsync(project, projectSettings.state.backendEndpoint, msp)
+            msp.loadModelsAsync(project, projectSettings.state.backendEndpoint, msp)
 
 
         }
+
+        fun refreshUi() {
+            panel.reset()
+        }
+
+        return panel
     }
 
     // Вспомогательные функции для сокращения кода кнопок
@@ -539,11 +623,24 @@ class FileChooserDialog(
             rightComponent = previewContainer
             resizeWeight = 0.4
         }
+        val mainPanel = panel {
+            row { cell(createSettingsPanel()).align(AlignX.FILL) }
+                .customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
 
-        val mainPanel = JPanel(BorderLayout())
-        mainPanel.add(createSettingsPanel(), BorderLayout.NORTH)   // ← панель сверху
-        mainPanel.add(split, BorderLayout.CENTER)                  // ← дерево + превью
-        mainPanel.add(createButtonsPanel(), BorderLayout.SOUTH)    // ← кнопки внизу
+            // Вот та самая группа
+            collapsibleGroup("mainPanel") {
+                    row {cell(split).align(AlignX.FILL).align(AlignY.FILL)}
+                        .customize(UnscaledGapsY(top = 0, bottom = 0))
+            }.expanded = true
+
+            row { cell(createButtonsPanel()) }
+                .customize(UnscaledGapsY(top = 0, bottom = 0))
+        }
+
+        //val mainPanel = JPanel(BorderLayout())
+        //mainPanel.add(createSettingsPanel(), BorderLayout.NORTH)   // ← панель сверху
+        //mainPanel.add(split, BorderLayout.CENTER)                  // ← дерево + превью
+        //mainPanel.add(createButtonsPanel(), BorderLayout.SOUTH)    // ← кнопки внизу
 
         return mainPanel
     }
@@ -580,8 +677,6 @@ class FileChooserDialog(
 
         return languageTextField
     }
-
-
 
     override fun getInitialSize(): Dimension? {
         val ideWindow = WindowManager.getInstance().getFrame(project)
@@ -709,7 +804,7 @@ class FileChooserDialog(
     private fun createButtonsPanel(): JComponent {
         val panel = JPanel()
 
-        val openBtn = JButton("Clean steps").apply {
+        val fileActBtn = JButton("action").apply {
             addActionListener {
                 selectedFile?.let { file ->
                     val prompt = promptsCombo.selectedItem as? String ?: ""
@@ -719,35 +814,7 @@ class FileChooserDialog(
             }
         }
 
-
-        val explainBtn = JButton("Add Step: Description").apply {
-            addActionListener {
-                selectedFile?.let {
-                    onFileSelected(it, "explain")
-                }
-            }
-        }
-
-        val refactorBtn = JButton("Add Step: Data block ").apply {
-            addActionListener {
-                selectedFile?.let {
-                    onFileSelected(it, "refactor")
-                }
-            }
-        }
-
-        val testsBtn = JButton("Estimate the size").apply {
-            addActionListener {
-                selectedFile?.let {
-                    onFileSelected(it, "tests")
-                }
-            }
-        }
-
-        panel.add(openBtn)
-        panel.add(explainBtn)
-        panel.add(refactorBtn)
-        panel.add(testsBtn)
+        //panel.add(fileActBtn)
 
         return panel
     }

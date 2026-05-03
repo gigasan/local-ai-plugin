@@ -1,0 +1,103 @@
+package com.gigasan.ai.ui
+
+import com.gigasan.ai.config.storage.MyPluginData
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.ui.SimpleColoredComponent
+import com.intellij.ui.SimpleTextAttributes
+import java.awt.Component
+import javax.swing.JList
+import javax.swing.ListCellRenderer
+import com.intellij.openapi.components.*
+import com.intellij.openapi.project.Project
+import com.intellij.ui.JBColor
+import com.intellij.util.ui.JBUI
+import java.awt.BorderLayout
+import javax.swing.JLabel
+import javax.swing.JPanel
+import java.awt.GridLayout
+
+
+
+class AdvancedPluginRenderer : SimpleColoredComponent(), ListCellRenderer<MyPluginData> {
+    private val logger = Logger.getInstance("AdvancedPluginRenderer")
+    init {
+        isOpaque = true
+    }
+
+    override fun getListCellRendererComponent(
+        list: JList<out MyPluginData>,
+        value: MyPluginData,
+        index: Int,
+        isSelected: Boolean,
+        cellHasFocus: Boolean
+    ): Component {
+        clear()
+        icon = when (value.iconType) {
+            "Add" -> AllIcons.General.Add
+            "Remove" -> AllIcons.General.Remove
+            "Delete" -> AllIcons.General.Delete
+            "Web" -> AllIcons.General.Web
+            else -> AllIcons.General.TodoDefault
+        }
+        append(value.name, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+        append("by ${value.author}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+        background = if (isSelected) list.selectionBackground else list.background
+        return this
+    }
+}
+
+
+class MyTwoLineRenderer : JPanel(BorderLayout()), ListCellRenderer<MyPluginData> {
+    private val titleComponent = SimpleColoredComponent()
+    private val authorComponent = SimpleColoredComponent()
+    private val iconLabel = JLabel()
+
+    init {
+        isOpaque = true
+        layout = BorderLayout()
+
+        // Создаем текстовый блок (две строки)
+        val textPanel = JPanel(GridLayout(2, 1)).apply {
+            isOpaque = false
+            add(titleComponent)
+            add(authorComponent)
+        }
+
+        add(iconLabel, BorderLayout.WEST)
+        add(textPanel, BorderLayout.CENTER)
+        border = JBUI.Borders.empty(4, 6)
+    }
+
+    override fun getListCellRendererComponent(
+        list: JList<out MyPluginData>,
+        value: MyPluginData,
+        index: Int,
+        isSelected: Boolean,
+        cellHasFocus: Boolean
+    ): Component {
+        titleComponent.clear()
+        authorComponent.clear()
+
+        // 1. Первая строка
+        titleComponent.append(value.name, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+
+        // 2. Вторая строка
+        authorComponent.append("by ${value.author}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+
+        // Иконка
+        iconLabel.icon = when (value.iconType) {
+            "Add" -> AllIcons.General.Add
+            else -> AllIcons.General.TodoDefault
+        }
+
+        // Цвета фона
+        val bg = if (isSelected) list.selectionBackground else list.background
+        background = bg
+        // Чтобы вложенные панели не перекрывали фон
+        titleComponent.background = bg
+        authorComponent.background = bg
+
+        return this
+    }
+}
