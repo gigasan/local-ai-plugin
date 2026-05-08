@@ -4,7 +4,7 @@ import com.intellij.openapi.ui.Messages
 import com.gigasan.ai.analysis.KotlinProjectAnalyzer
 import com.gigasan.ai.analysis.RustProjectAnalyzer
 import com.gigasan.ai.config.DefaultChatConfigProvider
-import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.core.projectHasKotlinSource
 import com.gigasan.ai.ui.RefactorDialog
 import com.intellij.icons.AllIcons
@@ -25,7 +25,7 @@ import com.intellij.psi.PsiManager
 
 class AnalyzeAction : AnAction("Analyze Project", "Scan project and open refactor dialog", AllIcons.Actions.DependencyAnalyzer) {
     private val logger = Logger.getInstance("AnalyzeAction")
-    private val settings = PluginSettings()
+    private val settings = PluginSettingsService()
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
 

@@ -28,7 +28,7 @@
         <projectService
                 serviceInterface="com.gigasan.ai.config.PluginConfigProvider"
                 serviceImplementation="com.gigasan.ai.config.DefaultChatConfigProvider"/>
-        <applicationService serviceImplementation="com.gigasan.ai.config.storage.PluginSettings"/>
+        <applicationService serviceImplementation="com.gigasan.ai.config.storage.PluginSettingsService"/>
         <projectConfigurable
             instance="com.gigasan.ai.config.PluginSettingsConfigurable"
             displayName="Local AI Chat Settings"

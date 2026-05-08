@@ -1,7 +1,7 @@
 package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.DefaultChatConfigProvider
-import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -11,7 +11,7 @@ import com.intellij.openapi.diagnostic.Logger
 
 class AskAction : AnAction("Ask", "Ask local AI", AllIcons.General.Balloon) {
     private val logger = Logger.getInstance("AskAction")
-    private val settings = PluginSettings()
+    private val settings = PluginSettingsService()
 
     override fun actionPerformed(e: AnActionEvent) {
         ChatPanel.instance?.sendExternalMessage("Привет. Напиши простую программу на python")

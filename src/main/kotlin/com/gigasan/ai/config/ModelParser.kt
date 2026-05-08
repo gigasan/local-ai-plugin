@@ -1,7 +1,5 @@
 package com.gigasan.ai.config
 
-import com.gigasan.ai.config.storage.Model
-import com.gigasan.ai.config.storage.Source
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.util.xmlb.annotations.Attribute
@@ -10,22 +8,8 @@ import com.intellij.util.xmlb.annotations.XCollection
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-
-
-
-
-//data class Model( // LM Studio or Ollama
-//    val source: Source,
-//    val key: String, // key or model
-//    val displayName: String, // display_name or name
-//    val size: Long, // size_bytes or size
-//    val format: String, // format or details/format
-//    val quant: String, // quantization/name or details/quantization_level
-//    val params: String, // params_string or details/parameter_size
-//    val arc: String, // architecture or details/family
-//    val maxContext: Int, // max_context_length or null
-//    val tools: Boolean, // capabilities/trained_for_tool_use or null
-//)
+import com.gigasan.ai.config.storage.Model
+import com.gigasan.ai.config.storage.Source
 
 fun String?.orUnknown() = this ?: "unknown"
 

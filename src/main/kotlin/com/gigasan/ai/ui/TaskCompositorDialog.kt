@@ -1,13 +1,14 @@
 package com.gigasan.ai.ui
 
-import com.gigasan.ai.ui.RequestSettingsPanel
-import com.gigasan.ai.ui.ModelSettingsPanel
 import com.gigasan.ai.config.storage.Model
-import com.gigasan.ai.config.storage.MyPluginData
-import com.gigasan.ai.config.storage.MyPluginSettingsService
-import com.gigasan.ai.config.storage.PluginSettings
-import com.gigasan.ai.config.storage.ProjectSettings
-import com.gigasan.ai.config.storage.PromptSettings
+import com.gigasan.ai.config.storage.WorkItem
+import com.gigasan.ai.config.storage.TaskSequenceService
+import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.config.storage.ProjectSettingsService
+import com.gigasan.ai.config.storage.InstructionsService
+import com.gigasan.ai.core.wrapCode
+import com.gigasan.ai.ui.chat.ChatPanel
+import com.gigasan.ai.ui.chat.ChatPanel.Companion.CHAT_BROWSER_KEY
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionToolbarPosition
@@ -30,32 +31,38 @@ import java.awt.Dimension
 import java.awt.event.ActionEvent
 import java.awt.event.MouseEvent
 import com.intellij.lang.Language
+import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.openapi.vfs.VfsUtilCore
+import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.LanguageTextField
+import com.intellij.ui.layout.selected
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.FlowLayout
 import java.awt.Font
+import javax.swing.JCheckBox
+
 
 class TaskCompositorDialog(
     private val project: Project,
     private val selectedLast: Boolean = false,
 ) : DialogWrapper(project) {
     private val logger = Logger.getInstance("TaskCompositorDialog")
-    private val pluginSettings = PluginSettings.instance
-    private val projectSettings = ProjectSettings.getInstance(project)
-    val settings = MyPluginSettingsService.getInstance(project)
-    val savedPlugins = settings.state.plugins
+    private val pluginSettingsService = PluginSettingsService.instance
+    private val projectSettingsService = ProjectSettingsService.getInstance(project)
+    val taskSequenceService = TaskSequenceService.getInstance(project).state
 
     // список (Левая часть)
-    val listModel = DefaultListModel<MyPluginData>().apply {
+    val tasksModel = DefaultListModel<WorkItem>().apply {
         // Загружаем данные
-        addAll(settings.state.plugins)
+        addAll(taskSequenceService.items)
     }
 
-    val myList = object : JBList<MyPluginData>(listModel) {
+    val tasksList = object : JBList<WorkItem>(tasksModel) {
         override fun getToolTipText(event: MouseEvent): String? {
             val index = locationToIndex(event.point)
             if (index != -1) {
@@ -79,19 +86,14 @@ class TaskCompositorDialog(
         cellRenderer = MyTwoLineRenderer()
     }
 
-    val rsp = RequestSettingsPanel(
-//        project,
-//        endpointSettings = pluginSettings.getSettingsFor(projectSettings.state.backendEndpoint),
-//        modelsList = mutableListOf<Model>(),
-        promptSettings = PromptSettings.instance,
-        )
+    val rsp = RequestSettingsPanel(instructionsService = InstructionsService.instance, cbProblem = JCheckBox())
     var msp = ModelSettingsPanel(
         project,
         modelsComboBox = ComboBox<String>(),
         modelsList = mutableListOf<Model>(),
         isLoading = false,
-        endpointSettings = pluginSettings.getSettingsFor(projectSettings.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
-        selectedEndpoint = projectSettings.state.backendEndpoint,
+        endpointSettings = pluginSettingsService.getSettingsFor(projectSettingsService.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
+        selectedEndpoint = projectSettingsService.state.backendEndpoint,
     )
     lateinit var topPanel: DialogPanel
     lateinit var bottomPanel: DialogPanel
@@ -99,11 +101,18 @@ class TaskCompositorDialog(
     init {
         title = "Task Compositor" // Заголовок окна
         setOKButtonText("Apply")
-        setCancelButtonText("Close")
+        setCancelButtonText("Cancel")
         init() // КРИТИЧЕСКИ ВАЖНО: без этого createCenterPanel не вызовется
     }
 
-
+    override fun getInitialSize(): Dimension? {
+        val ideWindow = WindowManager.getInstance().getFrame(project)
+        return if (ideWindow != null) {
+            Dimension((ideWindow.width * 0.85).toInt(), (ideWindow.height * 0.75).toInt())
+        } else {
+            super.getInitialSize()
+        }
+    }
 
     override fun createCenterPanel(): JComponent {
         logger.info("createCenterPanel enter")
@@ -131,24 +140,29 @@ class TaskCompositorDialog(
             preferredSize = Dimension((1280/1.5).toInt(), (720/1.5).toInt())
         }
 
-        myList.cellRenderer = MyTwoLineRenderer()
+        tasksList.cellRenderer = MyTwoLineRenderer()
 
         // контекстное меню
         val group = DefaultActionGroup()
         group.add(object : AnAction("Удалить", null, AllIcons.General.Remove) {
             override fun actionPerformed(e: AnActionEvent) {
-                val index = myList.selectedIndex
-                if (index != -1) (myList.model as DefaultListModel).remove(index)
-                if (index < listModel.size) {
-                    myList.selectedIndex = index
+                val index = tasksList.selectedIndex
+                if (index != -1) (tasksList.model as DefaultListModel).remove(index)
+                if (index < tasksModel.size) {
+                    tasksList.selectedIndex = index
                 }
+            }
+        })
+        group.add(object : AnAction("Удалить Всё", null, AllIcons.General.Remove) {
+            override fun actionPerformed(e: AnActionEvent) {
+                tasksModel.clear()
             }
         })
 
         val popupHandler = ActionManager.getInstance()
             .createActionPopupMenu("MyListPopup", group)
 
-        myList.componentPopupMenu = popupHandler.component
+        tasksList.componentPopupMenu = popupHandler.component
 
         // Создаем контейнер для контента (Правая часть)
         val detailsPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
@@ -156,58 +170,97 @@ class TaskCompositorDialog(
         }.apply { alignmentX = Component.CENTER_ALIGNMENT }
 
         // Логика переключения
-        myList.addListSelectionListener {
-            val selected = myList.selectedValue
+        tasksList.addListSelectionListener {
+            val selected = tasksList.selectedValue
             updateDetails(detailsPanel, selected)
         }
 
         // устанавливаем активным первый элемент или последний
-        if (!listModel.isEmpty) {
+        if (!tasksModel.isEmpty) {
             if (selectedLast) {
-                myList.selectedIndex = listModel.size - 1
-                myList.ensureIndexIsVisible(myList.selectedIndex)
+                tasksList.selectedIndex = tasksModel.size - 1
+                tasksList.ensureIndexIsVisible(tasksList.selectedIndex)
             } else {
-                myList.selectedIndex = 0
-                myList.ensureIndexIsVisible(myList.selectedIndex)
+                tasksList.selectedIndex = 0
+                tasksList.ensureIndexIsVisible(tasksList.selectedIndex)
             }
         }
 
         // панель инструментов
-        val decorator = ToolbarDecorator.createDecorator(myList)
+        val decorator = ToolbarDecorator.createDecorator(tasksList)
             .setToolbarPosition(ActionToolbarPosition.TOP)
-            .setAddActionName("Добавить новую задачу")
+            .setAddActionName("Add New WorkItem")
             .setAddAction {
-                // Логика добавления нового MyPluginData
-                val newData = MyPluginData("New", "author", "1.0", "", "Web", "")
-                (myList.model as DefaultListModel).addElement(newData)
+                // Логика добавления нового WorkItem
+                val newData = WorkItem("New WorkItem", "author", "1.0", "", "Web", "")
+                (tasksList.model as DefaultListModel).addElement(newData)
             }
-            .setRemoveActionName("Удалить задачу")
+            .setRemoveActionName("Remove WorkItem")
             .setRemoveAction {
                 // Логика удаления
-                val index = myList.selectedIndex
-                if (index != -1) (myList.model as DefaultListModel).remove(index)
-                if (index < listModel.size) {
-                    myList.selectedIndex = index
+                val index = tasksList.selectedIndex
+                if (index != -1) (tasksList.model as DefaultListModel).remove(index)
+                if (index < tasksModel.size) {
+                    tasksList.selectedIndex = index
                 }
             }
-            .setMoveUpActionName("Переместить вверх")
+            .setMoveUpActionName("Move Up")
             .setMoveUpAction {
-                val index = myList.selectedIndex
+                val index = tasksList.selectedIndex
                 if (index > 0) {
-                    val item = listModel.remove(index)
-                    listModel.add(index - 1, item)
-                    myList.selectedIndex = index - 1
+                    val item = tasksModel.remove(index)
+                    tasksModel.add(index - 1, item)
+                    tasksList.selectedIndex = index - 1
                 }
             }
-            .setMoveDownActionName("Переместить вниз")
+            .setMoveDownActionName("Move Down")
             .setMoveDownAction {
-                val index = myList.selectedIndex
-                if (index != -1 && index < listModel.size - 1) {
-                    val item = listModel.remove(index)
-                    listModel.add(index + 1, item)
-                    myList.selectedIndex = index + 1
+                val index = tasksList.selectedIndex
+                if (index != -1 && index < tasksModel.size - 1) {
+                    val item = tasksModel.remove(index)
+                    tasksModel.add(index + 1, item)
+                    tasksList.selectedIndex = index + 1
                 }
             }
+            // Добавляем первую кастомную кнопку
+            .addExtraAction(object : AnAction("Add File", "Read file", AllIcons.Actions.AddFile) {
+                override fun actionPerformed(e: AnActionEvent) {
+                    // 1. Настраиваем фильтр файлов (только .txt)
+                    val descriptor = FileChooserDescriptor(true, false, false, false, false, false)
+                        .withTitle("Выберите Файл")
+                        .withDescription("Файл будет загружен в список задач")
+                        //.withFileFilter { it.extension == "txt" }
+
+                    // 2. Открываем диалог
+                    val file = FileChooser.chooseFile(descriptor, e.project, null)
+
+                    if (file != null) {
+                        try {
+                            // Проверяем, не считает ли IDE этот файл бинарным
+                            if (file.fileType.isBinary) {
+                                logger.warn("Это бинарный файл, чтение как текст может быть некорректным")
+                                Messages.showErrorDialog(e.project, "Невозможно загрузить файл", "Загрузка")
+                                return
+                            }
+
+                            // 3. Читаем содержимое файла
+                            //val content = String(file.contentsToByteArray(), file.charset).trimIndent()
+
+                            val text = VfsUtilCore.loadText(file).trimIndent() // Более надежный способ чтения текста в IntelliJ
+
+                            // Здесь твоя логика обработки текста, например:
+                            // tasksListModel.addRow(content)
+
+                            val newData = WorkItem("File ${file.name}", "FileChooser", "1.0", "", "File", text)
+                            (tasksList.model as DefaultListModel).addElement(newData)
+
+                            logger.info("Файл загружен: ${file.name}")
+                        } catch (ex: Exception) {
+                            Messages.showErrorDialog(e.project, "Ошибка при чтении файла: ${ex.message}", "Загрузка")
+                        }
+                    }
+                }
+            })
 
         val panelWithButtons = decorator.createPanel()
 
@@ -222,13 +275,13 @@ class TaskCompositorDialog(
         rootPanel.add(bottomPanel, BorderLayout.SOUTH) // Панель снизу
 
         // Запускаем загрузку моделей сразу при создании панели
-        msp.loadModelsAsync(project, projectSettings.state.backendEndpoint, msp)
+        msp.loadModelsAsync(project, projectSettingsService.state.backendEndpoint, msp)
         
         logger.info("createCenterPanel leave")
         return rootPanel
     }
 
-    private fun updateDetails(detailsPanel: JBPanel<JBPanel<*>>, selected: MyPluginData?) {
+    private fun updateDetails(detailsPanel: JBPanel<JBPanel<*>>, selected: WorkItem?) {
         //logger.info("updateDetails")
         detailsPanel.removeAll()
         if (selected != null) {
@@ -237,7 +290,7 @@ class TaskCompositorDialog(
             val titleLabel = JBLabel(selected.name).apply {
                 // Устанавливаем отступы: сверху, слева, снизу, справа
                 border = JBUI.Borders.empty(0, 10, 10, 10)
-                font = Font(ProjectSettings.getInstance(project).state.fontName, Font.BOLD, ProjectSettings.getInstance(project).state.fontSize)
+                font = Font(ProjectSettingsService.getInstance(project).state.fontName, Font.BOLD, ProjectSettingsService.getInstance(project).state.fontSize)
                 //toolTipText = selected.name
                 setCopyable(true)
             }
@@ -248,15 +301,16 @@ class TaskCompositorDialog(
             val descriptionField = LanguageTextField(
                 Language.findLanguageByID("TEXT"), project, selected.description, false)
                 .apply {
-                    setPlaceholder("Описание этапа задания...")
+                    setPlaceholder("Дополнительное (не обязательное) описание для блока задачи...")
                     setShowPlaceholderWhenFocused(true)
+                    setCaretPosition(0)
                     addSettingsProvider { editor ->
                         //editor.settings.setRightMargin(editor.calculateVisibleRange().end)
                         editor.settings.isLineNumbersShown = false
                         editor.settings.isCaretRowShown = true
                         editor.settings.isUseSoftWraps = false
-                        editor.colorsScheme.editorFontName = ProjectSettings.getInstance(project).state.fontName
-                        editor.colorsScheme.editorFontSize = ProjectSettings.getInstance(project).state.fontSize
+                        editor.colorsScheme.editorFontName = ProjectSettingsService.getInstance(project).state.fontName
+                        editor.colorsScheme.editorFontSize = ProjectSettingsService.getInstance(project).state.fontSize
                         editor.settings.setTabSize(4)
                         editor.settings.setUseTabCharacter(false)
                         editor.scrollPane.apply {
@@ -273,15 +327,16 @@ class TaskCompositorDialog(
             val editorField = LanguageTextField(
                 Language.findLanguageByID("TEXT"), project, selected.text, false)
                 .apply {
-                    setPlaceholder("Код для отправки...")
+                    setPlaceholder("Блок кода/данных задачи...")
                     setShowPlaceholderWhenFocused(true)
+                    setCaretPosition(0)
                     addSettingsProvider { editor ->
                         //editor.settings.setRightMargin(editor.calculateVisibleRange().end)
                         editor.settings.isLineNumbersShown = true
                         editor.settings.isCaretRowShown = true
-                        editor.settings.isUseSoftWraps = ProjectSettings.getInstance(project).state.useSoftWrap
-                        editor.colorsScheme.editorFontName = ProjectSettings.getInstance(project).state.fontName
-                        editor.colorsScheme.editorFontSize = ProjectSettings.getInstance(project).state.fontSize
+                        editor.settings.isUseSoftWraps = ProjectSettingsService.getInstance(project).state.useSoftWrap
+                        editor.colorsScheme.editorFontName = ProjectSettingsService.getInstance(project).state.fontName
+                        editor.colorsScheme.editorFontSize = ProjectSettingsService.getInstance(project).state.fontSize
                         editor.settings.setTabSize(4)
                         editor.settings.setUseTabCharacter(false)
                         editor.scrollPane.apply {
@@ -292,8 +347,8 @@ class TaskCompositorDialog(
                             horizontalScrollBar.unitIncrement = 28
                         }
                     }
-                    setCaretPosition(0)
                 }
+
             val mainEditorComponent = editorField.component
 
             // 3. Создаем вертикальный разделитель
@@ -310,7 +365,7 @@ class TaskCompositorDialog(
                     addActionListener {
                         var sum = 0
                         var num = 0
-                        savedPlugins.forEach { it ->
+                        taskSequenceService.items.forEach { it ->
                             num += 1
                             sum += it.text.length
                         }
@@ -323,13 +378,24 @@ class TaskCompositorDialog(
                         val text = StringBuilder()
                         var sum = 0
                         var num = 0
-                        savedPlugins.forEach { it ->
+                        taskSequenceService.items.forEach { it ->
                             num += 1
                             sum += it.text.length
-                            text.append(it.description).append("\n")
-                            text.append(it.text).append("\n")
+                            text.append(it.description.trimIndent()).append("\n")
+                            text.append(wrapCode(it.text.trimIndent()))
                         }
-                        Messages.showInfoMessage("sending to AI $sum bytes in $num steps", title)
+                        //Messages.showInfoMessage("sending to AI $sum bytes in $num steps", title)
+
+                        val problem = StringBuilder()
+                        if (rsp.cbProblem.isSelected) {
+                            problem.append(rsp.instructionsService.state.selectedProblem).append("\n")
+                        }
+                        problem.append(text.toString()).append("\n")
+
+                        ChatPanel.instance?.sendInstructionQuestionTask(
+                            rsp.instructionsService.state.selectedInstruction,
+                            problem.toString()
+                            )
                     }
 
                 }
@@ -354,12 +420,12 @@ class TaskCompositorDialog(
     }
 
     override fun doOKAction() {
-        val settings = MyPluginSettingsService.getInstance(project)
+        val taskSequenceService = TaskSequenceService.getInstance(project)
 
         // Очищаем старый список и записываем новый в текущем порядке из модели
-        settings.state.plugins.clear()
-        for (i in 0 until (myList.model as DefaultListModel).size) {
-            settings.state.plugins.add(myList.model.getElementAt(i))
+        taskSequenceService.state.items.clear()
+        for (i in 0 until (tasksList.model as DefaultListModel).size) {
+            taskSequenceService.state.items.add(tasksList.model.getElementAt(i))
         }
 
         bottomPanel.apply()
@@ -370,6 +436,7 @@ class TaskCompositorDialog(
     }
 
     override fun doCancelAction() {
+        topPanel.reset()
         bottomPanel.reset()
         super.doCancelAction()
     }

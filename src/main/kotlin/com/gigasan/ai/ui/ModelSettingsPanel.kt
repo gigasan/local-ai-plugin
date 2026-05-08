@@ -7,8 +7,8 @@ import com.gigasan.ai.config.storage.EndpointSettings
 import com.gigasan.ai.config.storage.Model
 import com.gigasan.ai.config.storage.ModelCache
 import com.gigasan.ai.config.storage.ModelCacheService
-import com.gigasan.ai.config.storage.PluginSettings
-import com.gigasan.ai.config.storage.ProjectSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.core.FileLogger
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -44,7 +44,7 @@ data class ModelSettingsPanel(
     //fun Panel.commonModelSettings(components: ModelSettingsPanel) {
     fun createModelSettingsPanel(components: ModelSettingsPanel): DialogPanel {
         val project = components.project
-        val settings = ProjectSettings.getInstance(project)
+        val settings = ProjectSettingsService.getInstance(project)
         return panel { // Создаем новую изолированную панель
             collapsibleGroup("Model Settings (Endpoint Dependent)") {
                 row("Model:") {
@@ -136,8 +136,8 @@ data class ModelSettingsPanel(
 
         val url = targetEndpoint.engine.defaultHost.first() + targetEndpoint.defaultModelList.first()
         val apiId = targetEndpoint.api.id
-        val global = PluginSettings.instance
-        val currentEndpoint = ProjectSettings.getInstance(project).state.backendEndpoint
+        val global = PluginSettingsService.instance
+        val currentEndpoint = ProjectSettingsService.getInstance(project).state.backendEndpoint
         val apiKey = global.getSettingsFor(targetEndpoint).apiKey
         val endpointSettings = global.getSettingsFor(targetEndpoint)
         val cacheService = ModelCacheService.instance

@@ -12,6 +12,6 @@ class MyPluginInitializer : AppLifecycleListener {
         // --force-device-scale-factor=1.5
         // --disable-gpu-vsync
         // --disable-features=PerformanceMonitor --log-severity=disable
-
+        // -Dide.browser.jcef.log.level=info - включить лог jcef
     }
 }

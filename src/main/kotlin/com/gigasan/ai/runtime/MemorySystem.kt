@@ -37,12 +37,12 @@ object MemoryContextBuilder {
             append("Previous context:\n")
 
             history.forEach { t ->
-                append("- User: ${t.content}\n")
+                append("- User: ${t.question}\n")
                 append("  Assistant: ${t.answer}\n")
             }
 
             append("\nCurrent task:\n")
-            append(task.content)
+            append(task.question)
         }
     }
 }

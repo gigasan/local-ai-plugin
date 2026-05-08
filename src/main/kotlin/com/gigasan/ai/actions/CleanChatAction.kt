@@ -1,6 +1,6 @@
 package com.gigasan.ai.actions
 
-import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -10,7 +10,7 @@ import com.intellij.openapi.diagnostic.Logger
 
 class CleanChatAction : AnAction("Clean Chat", "Remove all chats", AllIcons.Actions.ClearCash) {
     private val logger = Logger.getInstance("CleanChatAction")
-    private val settings = PluginSettings()
+    private val settings = PluginSettingsService()
 
     override fun actionPerformed(e: AnActionEvent) {
         ChatPanel.instance?.cleanAllTasks()

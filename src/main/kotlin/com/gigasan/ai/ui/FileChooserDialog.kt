@@ -1,9 +1,9 @@
 ﻿package com.gigasan.ai.ui
 
-import com.gigasan.ai.config.storage.PluginSettings
-import com.gigasan.ai.config.storage.ProjectSettings
-import com.gigasan.ai.config.storage.PromptSettings
 import com.gigasan.ai.config.storage.Model
+import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.config.storage.ProjectSettingsService
+import com.gigasan.ai.config.storage.InstructionsService
 import com.intellij.icons.AllIcons
 import com.intellij.lang.Language
 import com.intellij.openapi.diagnostic.Logger
@@ -60,8 +60,8 @@ class FileChooserDialog(
     private val root: VirtualFile,
     private val onFileSelected: (VirtualFile, String) -> Unit
 ) : DialogWrapper(project) {
-    private val pluginSettings = PluginSettings.instance
-    private val projectSettings = ProjectSettings.getInstance(project)
+    private val pluginSettingsService = PluginSettingsService.instance
+    private val projectSettingsService = ProjectSettingsService.getInstance(project)
 
     // model settings from ModelSettingsPanel.kt
     lateinit var msp: ModelSettingsPanel // Контейнер с компонентами для ModelSettingsPanel
@@ -85,7 +85,7 @@ class FileChooserDialog(
 
     private lateinit var promptsCombo: JComboBox<String>
     private lateinit var promptsModel: DefaultComboBoxModel<String>
-    private val promptSettings = PromptSettings.instance
+    private val instructionsService = InstructionsService.instance
 
     init {
         title = "FileChooserDialog File Preview"
@@ -145,7 +145,7 @@ class FileChooserDialog(
 
     */
 
-    //var stepIdProp: MutableProperty<Int> = MutableProperty({promptSettings.state.stepId}, {value -> promptSettings.state.stepId = value})
+    //var stepIdProp: MutableProperty<Int> = MutableProperty({instructionsService.state.stepId}, {value -> instructionsService.state.stepId = value})
 
     lateinit var sliderSteps: JSlider
 
@@ -158,8 +158,8 @@ class FileChooserDialog(
             modelsComboBox = ComboBox<String>(),
             modelsList = mutableListOf<Model>(),
             isLoading = false,
-            endpointSettings = pluginSettings.getSettingsFor(projectSettings.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
-            selectedEndpoint = projectSettings.state.backendEndpoint,
+            endpointSettings = pluginSettingsService.getSettingsFor(projectSettingsService.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
+            selectedEndpoint = projectSettingsService.state.backendEndpoint,
         )
         lateinit var modelSettingsPanel: DialogPanel
         fun refreshUIFromModel(mcc: ModelSettingsPanel) {
@@ -171,10 +171,10 @@ class FileChooserDialog(
 
         // Инициализируем модели
         systemsModel = DefaultComboBoxModel<String>().apply {
-            promptSettings.state.systems.forEach { addElement(it) }
+            instructionsService.state.instructions.forEach { addElement(it) }
         }
         promptsModel = DefaultComboBoxModel<String>().apply {
-            promptSettings.state.prompts.forEach { addElement(it) }
+            instructionsService.state.problems.forEach { addElement(it) }
         }
 
         var stepsProperty: Int = 0
@@ -325,10 +325,10 @@ class FileChooserDialog(
                         }
                 }
             }.apply {
-                expanded = promptSettings.state.systemExpanded // Разворачиваем группу сразу после создания
+                expanded = instructionsService.state.systemExpanded // Разворачиваем группу сразу после создания
                 // 2. Слушаем изменения (клик пользователя по стрелочке)
                 addExpandedListener { isExpanded ->
-                    promptSettings.state.systemExpanded = isExpanded
+                    instructionsService.state.systemExpanded = isExpanded
                 }
             }.customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
 
@@ -336,12 +336,12 @@ class FileChooserDialog(
 
             val prevStepBtn = JButton("Prev step").apply {
                 addActionListener {
-                    val state = promptSettings.state
+                    val state = instructionsService.state
                     if (state.stepId >= 1) {
                         state.stepId --
                         sliderSteps.value = state.stepId
                         sliderSteps.maximum = state.stepIdMax - 1
-                        promptSettings.settingsModified()
+                        instructionsService.settingsModified()
                         previewEditor.text = state.stepsList[state.stepId]?:""
                     }
                 }
@@ -349,30 +349,30 @@ class FileChooserDialog(
 
             val resetStepsBtn = JButton("Reset steps").apply {
                 addActionListener {
-                    val state = promptSettings.state
+                    val state = instructionsService.state
                     state.stepsList.fill(null)
                     state.stepId = 0
                     sliderSteps.value = state.stepId
                     sliderSteps.maximum = state.stepIdMax - 1
-                    promptSettings.settingsModified()
+                    instructionsService.settingsModified()
                     previewEditor.text = state.stepsList[state.stepId]?:""
                 }
             }
 
             val nextStepBtn = JButton("Next step").apply {
                 addActionListener {
-                    val state = promptSettings.state
+                    val state = instructionsService.state
 
                     if (state.stepsList.size < state.stepIdMax) {
-                        state.stepsList = arrayOfNulls(state.stepIdMax)
+                        //state.stepsList = MutableList(state.stepIdMax)
                     }
-                    
+
                     if (state.stepId < state.stepIdMax - 1 && !state.stepsList[state.stepId+1].isNullOrBlank())
                     {
                         state.stepId ++
                         sliderSteps.value = state.stepId
                         sliderSteps.maximum = state.stepIdMax - 1
-                        promptSettings.settingsModified()
+                        instructionsService.settingsModified()
                         previewEditor.text = state.stepsList[state.stepId]?:""
                     }
                 }
@@ -380,7 +380,7 @@ class FileChooserDialog(
 
             val addStepDescBtn = JButton("Add Step: Description").apply {
                 addActionListener {
-                    val state = promptSettings.state
+                    val state = instructionsService.state
                     val title = "Добавить Новый Шаг"
 
                     if (state.stepId == state.stepIdMax) {
@@ -392,7 +392,7 @@ class FileChooserDialog(
                     val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
 
                     if (state.stepsList.size < state.stepIdMax) {
-                        state.stepsList = arrayOfNulls(state.stepIdMax)
+                        //state.stepsList = arrayOfNulls(state.stepIdMax)
                     }
 
                     logger.info("result=$result stepId=${state.stepId} stepIdMax=${state.stepIdMax} stepList=${state.stepsList.size}")
@@ -400,7 +400,7 @@ class FileChooserDialog(
                         state.stepsList[state.stepId] = result
                         state.stepId++
                         //state.stepsList = state.stepsList.copyOf()
-                        promptSettings.settingsModified()
+                        instructionsService.settingsModified()
                         sliderSteps.value = state.stepId
                         sliderSteps.maximum = state.stepIdMax - 1
                         logger.info("updated stepId=${state.stepId} stepList=${state.stepsList}  value $result")
@@ -410,7 +410,7 @@ class FileChooserDialog(
 
             val addStepDataBtn = JButton("Add Step: Data block ").apply {
                 addActionListener {
-                    val state = promptSettings.state
+                    val state = instructionsService.state
                     val title = "Добавить Новый Шаг"
 
                     if (state.stepId == state.stepIdMax) {
@@ -423,12 +423,12 @@ class FileChooserDialog(
                     if (!result.isNullOrBlank()) {
 
                         if (state.stepsList.size < state.stepIdMax) {
-                            state.stepsList = arrayOfNulls(state.stepIdMax)
+                            //state.stepsList = arrayOfNulls(state.stepIdMax)
                         }
 
                         state.stepsList[state.stepId] = result
                         state.stepId++
-                        promptSettings.settingsModified()
+                        instructionsService.settingsModified()
                         sliderSteps.value = state.stepId
                         sliderSteps.maximum = state.stepIdMax - 1
                     }
@@ -439,7 +439,7 @@ class FileChooserDialog(
                 addActionListener {
                     var sum = 0
                     var num = 0
-                    promptSettings.state.stepsList.forEach { it ->
+                    instructionsService.state.stepsList.forEach { it ->
                         if (!it.isNullOrBlank())
                         {
                             num += 1
@@ -460,11 +460,11 @@ class FileChooserDialog(
             collapsibleGroup("Request Features") {
                 row {
                     label("Steps:")
-                    sliderSteps = slider(0, promptSettings.state.stepIdMax-1, 0, 1)  // min, max, minorTickSpacing, majorTickSpacing
-                        .bindValue(promptSettings.state::stepId)
+                    sliderSteps = slider(0, instructionsService.state.stepIdMax-1, 0, 1)  // min, max, minorTickSpacing, majorTickSpacing
+                        .bindValue(instructionsService.state::stepId)
                         .onChanged {
-                            promptSettings.state
-                            previewEditor.text = promptSettings.state.stepId.toString()
+                            instructionsService.state
+                            previewEditor.text = instructionsService.state.stepId.toString()
                         }
 
                         .apply {
@@ -519,10 +519,10 @@ class FileChooserDialog(
 //                    }
                 }
             }.apply {
-                expanded = promptSettings.state.inputExpanded
+                expanded = instructionsService.state.inputExpanded
                 // 2. Слушаем изменения (клик пользователя по стрелочке)
                 addExpandedListener { isExpanded ->
-                    promptSettings.state.inputExpanded = isExpanded
+                    instructionsService.state.inputExpanded = isExpanded
                 }
             }.customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
 
@@ -541,10 +541,10 @@ class FileChooserDialog(
 
                 }
             }.apply {
-                expanded = promptSettings.state.commonExpanded
+                expanded = instructionsService.state.commonExpanded
                 // 2. Слушаем изменения (клик пользователя по стрелочке)
                 addExpandedListener { isExpanded ->
-                    promptSettings.state.commonExpanded = isExpanded
+                    instructionsService.state.commonExpanded = isExpanded
                 }
             }.customize(UnscaledGapsY(bottom = 0)) // Убираем лишнюю пустоту снизу
 
@@ -559,7 +559,7 @@ class FileChooserDialog(
 
 
             // Запускаем загрузку моделей сразу при создании панели
-            msp.loadModelsAsync(project, projectSettings.state.backendEndpoint, msp)
+            msp.loadModelsAsync(project, projectSettingsService.state.backendEndpoint, msp)
 
 
         }
@@ -602,17 +602,17 @@ class FileChooserDialog(
 
     // Сохраняем текущий список в настройки
     private fun saveSystems() {
-        promptSettings.state.systems.clear()
+        instructionsService.state.instructions.clear()
         for (i in 0 until systemsModel.size) {
-            promptSettings.state.systems.add(systemsModel.getElementAt(i))
+            instructionsService.state.instructions.add(systemsModel.getElementAt(i))
         }
     }
 
     // Сохраняем текущий список в настройки
     private fun savePrompts() {
-        promptSettings.state.prompts.clear()
+        instructionsService.state.problems.clear()
         for (i in 0 until promptsModel.size) {
-            promptSettings.state.prompts.add(promptsModel.getElementAt(i))
+            instructionsService.state.problems.add(promptsModel.getElementAt(i))
         }
     }
 

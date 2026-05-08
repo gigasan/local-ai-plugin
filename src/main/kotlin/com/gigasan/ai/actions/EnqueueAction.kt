@@ -1,8 +1,8 @@
 package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.DefaultChatConfigProvider
-import com.gigasan.ai.config.storage.PluginSettings
-import com.gigasan.ai.config.storage.ProjectSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.ui.TaskCompositorDialog
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -11,21 +11,21 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.util.TextRange
-import com.gigasan.ai.config.storage.MyPluginData
-import com.gigasan.ai.config.storage.MyPluginSettingsService
+import com.gigasan.ai.config.storage.WorkItem
+import com.gigasan.ai.config.storage.TaskSequenceService
 
 
 class EnqueueAction : AnAction("Enqueue the Task Local AI Model", "Send selected text into AI task", AllIcons.Actions.AddToDictionary) {
     private val logger = Logger.getInstance("EnqueueAction")
-    private val settings = PluginSettings()
+    private val settings = PluginSettingsService()
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val savedPlugins = MyPluginSettingsService.getInstance(project).state.plugins
+        val savedPlugins = TaskSequenceService.getInstance(project).state.items
         val editor = e.getData(CommonDataKeys.EDITOR)
 
         // Если вы добавили новый плагин в список:
-        fun addNewPlugin(data: MyPluginData) {
+        fun addNewPlugin(data: WorkItem) {
             savedPlugins.add(data)
             // IDE сама сохранит файл при выходе или сохранении проекта
         }
@@ -41,7 +41,7 @@ class EnqueueAction : AnAction("Enqueue the Task Local AI Model", "Send selected
             val endLine = editor.document.getLineNumber(selEnd)
 
             // выбирать строки целиком
-            if (ProjectSettings.getInstance(project).state.selectEntireLines) {
+            if (ProjectSettingsService.getInstance(project).state.selectEntireLines) {
                 val lineStartOffset = editor.document.getLineStartOffset(startLine)
                 val lineEndOffset = editor.document.getLineEndOffset(endLine)
 
@@ -56,7 +56,7 @@ class EnqueueAction : AnAction("Enqueue the Task Local AI Model", "Send selected
             val virtualFile = e.getData(CommonDataKeys.VIRTUAL_FILE)
             val fileName = virtualFile?.name
             addNewPlugin(
-                MyPluginData(
+                WorkItem(
                     "${fileName}:(${userFriendlyStart}-${userFriendlyEnd})",
                     "EnqueueAction",
                     "${savedPlugins.size}",
@@ -77,7 +77,7 @@ class EnqueueAction : AnAction("Enqueue the Task Local AI Model", "Send selected
             return
         }
 
-        val state = ProjectSettings.getInstance(project).state
+        val state = ProjectSettingsService.getInstance(project).state
         val prov = DefaultChatConfigProvider(project)
         val model = prov.buildEndpointSetting().selectedModelName
         val key = prov.buildEndpointSetting().selectedModelKey
