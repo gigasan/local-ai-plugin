@@ -1,8 +1,8 @@
 package com.gigasan.ai.ui.chat
 
 import com.gigasan.ai.config.DefaultChatConfigProvider
-import com.gigasan.ai.config.storage.PluginSettings
-import com.gigasan.ai.config.SettingsChangeListener
+import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.config.storage.SettingsChangeListener
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -44,7 +44,7 @@ class ChatToolWindowFactory : ToolWindowFactory {
             }
         }
 
-        val settings = PluginSettings()
+        val settings = PluginSettingsService()
         val actionList = buildList {
             if (settings.state.enableSettingsAction) {
                 add(settingsAction)

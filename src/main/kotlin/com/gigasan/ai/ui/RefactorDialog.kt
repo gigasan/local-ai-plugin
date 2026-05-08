@@ -397,7 +397,7 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
 
     override fun doOKAction() {
         super.doOKAction()
-        ChatPanel.instance?.sendExternalMessage(codeTextField.text, taskField.text)
+        ChatPanel.instance?.sendExternalMessage(taskField.text + codeTextField.text)
             //wrapCodeBlock(taskField.text, codeTextField.text, language)
         //)
     }

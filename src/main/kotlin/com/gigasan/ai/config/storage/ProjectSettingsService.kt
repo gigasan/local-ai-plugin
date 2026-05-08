@@ -1,18 +1,18 @@
 package com.gigasan.ai.config.storage
 
 import com.gigasan.ai.config.BackendEndpoint
-import com.gigasan.ai.config.SettingsChangeListener
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.intellij.util.xmlb.annotations.Tag
 
 // 1. Указываем имя файла, в котором будут лежать настройки (в папке конфигов IDE)
-@State(name = "com.gigasan.localai.config.ProjectSettings", storages = [Storage("ProjectSettings.xml")])
+@State(name = "com.gigasan.localai.config.ProjectSettingsService", storages = [Storage("ProjectSettingsService.xml")])
 @Service(Service.Level.PROJECT)
-class ProjectSettings(private val project: Project) : PersistentStateComponent<ProjectSettings.State> {
+class ProjectSettingsService(private val project: Project) : PersistentStateComponent<ProjectSettingsService.State> {
     //private val project: com.intellij.openapi.project.Project // Передайте его в конструктор, если нужно
 
     data class State (
@@ -62,6 +62,6 @@ class ProjectSettings(private val project: Project) : PersistentStateComponent<P
 
     companion object {
         // Для проектного сервиса обязательно нужно передавать экземпляр проекта
-        fun getInstance(project: Project): ProjectSettings = project.service()
+        fun getInstance(project: Project): ProjectSettingsService = project.service()
     }
 }

@@ -1,6 +1,6 @@
 package com.gigasan.ai.ui
 
-import com.gigasan.ai.config.storage.MyPluginData
+import com.gigasan.ai.config.storage.WorkItem
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.ui.SimpleColoredComponent
@@ -8,9 +8,6 @@ import com.intellij.ui.SimpleTextAttributes
 import java.awt.Component
 import javax.swing.JList
 import javax.swing.ListCellRenderer
-import com.intellij.openapi.components.*
-import com.intellij.openapi.project.Project
-import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import javax.swing.JLabel
@@ -19,15 +16,15 @@ import java.awt.GridLayout
 
 
 
-class AdvancedPluginRenderer : SimpleColoredComponent(), ListCellRenderer<MyPluginData> {
+class AdvancedPluginRenderer : SimpleColoredComponent(), ListCellRenderer<WorkItem> {
     private val logger = Logger.getInstance("AdvancedPluginRenderer")
     init {
         isOpaque = true
     }
 
     override fun getListCellRendererComponent(
-        list: JList<out MyPluginData>,
-        value: MyPluginData,
+        list: JList<out WorkItem>,
+        value: WorkItem,
         index: Int,
         isSelected: Boolean,
         cellHasFocus: Boolean
@@ -48,7 +45,7 @@ class AdvancedPluginRenderer : SimpleColoredComponent(), ListCellRenderer<MyPlug
 }
 
 
-class MyTwoLineRenderer : JPanel(BorderLayout()), ListCellRenderer<MyPluginData> {
+class MyTwoLineRenderer : JPanel(BorderLayout()), ListCellRenderer<WorkItem> {
     private val titleComponent = SimpleColoredComponent()
     private val authorComponent = SimpleColoredComponent()
     private val iconLabel = JLabel()
@@ -70,8 +67,8 @@ class MyTwoLineRenderer : JPanel(BorderLayout()), ListCellRenderer<MyPluginData>
     }
 
     override fun getListCellRendererComponent(
-        list: JList<out MyPluginData>,
-        value: MyPluginData,
+        list: JList<out WorkItem>,
+        value: WorkItem,
         index: Int,
         isSelected: Boolean,
         cellHasFocus: Boolean

@@ -1,134 +1,236 @@
 package com.gigasan.ai.ui
 
-import com.gigasan.ai.config.storage.EndpointSettings
-import com.gigasan.ai.config.storage.Model
-import com.gigasan.ai.config.storage.ProjectSettings
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.project.Project
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.util.io.FileUtil
 import com.intellij.ui.dsl.builder.*
-import com.intellij.ui.dsl.gridLayout.UnscaledGaps
+import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
 import com.intellij.util.ui.JBUI
 import java.awt.Component
 import java.awt.Dimension
 import javax.swing.*
 import kotlin.text.trim
-import com.gigasan.ai.config.storage.PromptSettings
-import com.intellij.openapi.diagnostic.Logger
+import com.gigasan.ai.config.storage.InstructionsService
 import com.intellij.openapi.ui.DialogPanel
-import kotlin.collections.component1
-import kotlin.collections.component2
+import com.intellij.ui.dsl.gridLayout.UnscaledGaps
+import com.intellij.ui.layout.selected
+import java.io.File
+import com.intellij.openapi.fileChooser.FileChooserFactory
+import com.intellij.openapi.fileChooser.FileSaverDescriptor
+import com.intellij.openapi.fileChooser.FileSaverDialog
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.io.FileUtilRt   // если нужно
 
 data class RequestSettingsPanel(
-    // Ссылки на внешние объекты (чтобы можно было обновлять UI из асинхронного кода)
-//    var project: Project,
-//    var endpointSettings: EndpointSettings,
-//    var modelsList: MutableList<Model> = mutableListOf(),
-    var promptSettings: PromptSettings,
+    //var project: Project,
+    var instructionsService: InstructionsService,
+    var cbProblem: JCheckBox
 ) {
     val logger = Logger.getInstance("RequestSettingsPanel")
 
-
-
-
-    // Функция-расширение для Panel
     fun createRequestSettingsPanel(components: RequestSettingsPanel): DialogPanel {
 
-        //val projectSettings = ProjectSettings.getInstance(project)
+        val instructionsModel = DefaultComboBoxModel(instructionsService.state.instructions.toTypedArray())
+        val problemsModel = DefaultComboBoxModel(instructionsService.state.problems.toTypedArray())
 
-        // Подготавливаем модели (предполагаем, что они доступны через настройки или вынесены)
-        val systemsModel = DefaultComboBoxModel(promptSettings.state.systems.toTypedArray())
-        val promptsModel = DefaultComboBoxModel(promptSettings.state.prompts.toTypedArray())
-
-        // Сохраняем текущий список в настройки
         fun saveSystems() {
-            promptSettings.state.systems.clear()
-            for (i in 0 until systemsModel.size) {
-                promptSettings.state.systems.add(systemsModel.getElementAt(i))
+            instructionsService.state.instructions.clear()
+            for (i in 0 until instructionsModel.size) {
+                instructionsService.state.instructions.add(instructionsModel.getElementAt(i))
             }
         }
 
-        // Сохраняем текущий список в настройки
         fun savePrompts() {
-            promptSettings.state.prompts.clear()
-            for (i in 0 until promptsModel.size) {
-                promptSettings.state.prompts.add(promptsModel.getElementAt(i))
+            instructionsService.state.problems.clear()
+            for (i in 0 until problemsModel.size) {
+                instructionsService.state.problems.add(problemsModel.getElementAt(i))
             }
         }
-
-
 
         val resultPanel = panel {
 
-            collapsibleGroup("Request Settings") {
+            collapsibleGroup("Directive Compound") {
 
-                row("Система:") {
-                    comboBox(systemsModel)
-                        .align(AlignX.FILL) // РАСТЯГИВАЕМ НА ВСЮ ШИРИНУ
+                row {
+                    val cbInstruction = checkBox("Instruction:")
+                        .bindSelected(components.instructionsService.state::enabledInstruction)
+                        .comment("Общие правила, роль, ограничения")
+
+                    comboBox(instructionsModel)
+                        .enabledIf(cbInstruction.selected)
+                        .align(AlignX.FILL)
                         .resizableColumn()
                         .applyToComponent {
                             isEditable = false
                             setRenderer(createTooltipRenderer())
                         }
                         .bindItem(
-                            getter = { components.promptSettings.state.selectedSystem },
-                            setter = { newName ->
-                                components.promptSettings.state.selectedSystem = newName.orEmpty()
-                            }
+                            getter = { components.instructionsService.state.selectedInstruction },
+                            setter = { newName -> components.instructionsService.state.selectedInstruction = newName.orEmpty() }
                         )
-                    // Создаем группу кнопок Система
-                    actionButton(AllIcons.General.Add) { handleAdd(systemsModel, "Введите текст новой системы:", "Добавление системы") { saveSystems() } }
-                    actionButton(AllIcons.Actions.Edit) { handleEdit(systemsModel, "Измените систему:", "Редактирование") { saveSystems() } }
-                    actionButton(AllIcons.General.Remove) { handleDelete(systemsModel, "Удалить систему?") { saveSystems() } }
+
+                    // Кнопки управления Instruction
+                    actionButton(AllIcons.General.Add) { handleAdd(instructionsModel, "Задайте общие правила, роль, ограничения... :", "Добавление инструкции") { saveSystems() } }
+                    actionButton(AllIcons.Actions.Edit) { handleEdit(instructionsModel, "Измените инструкцию:", "Редактирование") { saveSystems() } }
+                    actionButton(AllIcons.General.Remove) { handleDelete(instructionsModel, "Удалить инструкцию?") { saveSystems() } }
+
+                    // === Новые кнопки ===
+                    actionButton(AllIcons.Actions.MenuSaveall) { exportToXml(instructionsModel, "instructions") }
+                    actionButton(AllIcons.Actions.MenuOpen) { importFromXml(instructionsModel, "instructions") { saveSystems() } }
                 }
 
-                row("Промпт:") {
-                    comboBox(promptsModel)
-                        .align(AlignX.FILL) // РАСТЯГИВАЕМ
+                row {
+                    cbProblem = checkBox("Problem:")
+                        .bindSelected(components.instructionsService.state::enabledProblem)
+                        .comment("Что нужно сделать прямо сейчас")
+                        .component
+
+                    comboBox(problemsModel)
+                        .enabledIf(cbProblem.selected)
+                        .align(AlignX.FILL)
                         .resizableColumn()
                         .applyToComponent {
                             isEditable = false
                             setRenderer(createTooltipRenderer())
                         }
                         .bindItem(
-                            getter = { components.promptSettings.state.selectedPrompt },
-                            setter = { newName ->
-                                components.promptSettings.state.selectedPrompt = newName.orEmpty()
-                            }
+                            getter = { components.instructionsService.state.selectedProblem },
+                            setter = { newName -> components.instructionsService.state.selectedProblem = newName.orEmpty() }
                         )
-                    // Создаем группу кнопок Промпт
-                    actionButton(AllIcons.General.Add) { handleAdd(promptsModel, "Введите текст нового промпта:", "Добавление промпта") { savePrompts() } }
-                    actionButton(AllIcons.Actions.Edit) { handleEdit(promptsModel, "Измените промпт:", "Редактирование") { savePrompts() } }
-                    actionButton(AllIcons.General.Remove) { handleDelete(promptsModel, "Удалить промпт?") { savePrompts() } }
 
+                    // Кнопки управления Problem
+                    actionButton(AllIcons.General.Add) { handleAdd(problemsModel, "Что нужно сделать прямо сейчас... :", "Добавление задачи") { savePrompts() } }
+                    actionButton(AllIcons.Actions.Edit) { handleEdit(problemsModel, "Измените задачу:", "Редактирование") { savePrompts() } }
+                    actionButton(AllIcons.General.Remove) { handleDelete(problemsModel, "Удалить задачу?") { savePrompts() } }
+
+                    // === Новые кнопки ===
+                    actionButton(AllIcons.Actions.MenuSaveall) { exportToXml(problemsModel, "problems") }
+                    actionButton(AllIcons.Actions.MenuOpen) { importFromXml(problemsModel, "problems") { savePrompts() } }
                 }
             }.apply {
-                expanded = promptSettings.state.systemExpanded // Разворачиваем группу сразу после создания
-                // 2. Слушаем изменения (клик пользователя по стрелочке)
+                expanded = instructionsService.state.systemExpanded
                 addExpandedListener { isExpanded ->
-                    promptSettings.state.systemExpanded = isExpanded
+                    instructionsService.state.systemExpanded = isExpanded
                 }
             }.customize(UnscaledGapsY(bottom = 0))
         }
 
-
-        fun isModified(): Boolean {
-            return resultPanel.isModified()
-        }
-
-        fun apply() {
-            resultPanel.apply()
-        }
-
-        fun reset() {
-            resultPanel.reset()
-        }
+        // isModified / apply / reset оставляем как было
+        fun isModified(): Boolean = resultPanel.isModified()
+        fun apply() = resultPanel.apply()
+        fun reset() = resultPanel.reset()
 
         return resultPanel
     }
 
-    // Вспомогательная функция для создания кнопок в одном стиле
+    // ==================== XML Export / Import ====================
+
+    private fun exportToXml(model: DefaultComboBoxModel<String>, type: String) {
+        val descriptor = FileSaverDescriptor(
+            "Export $type",
+            "Выберите место для сохранения XML-файла"
+        ).apply {
+            withExtensionFilter("XML files", "xml")
+        }
+
+        val dialog = FileChooserFactory.getInstance()
+            .createSaveFileDialog(descriptor, null as Project?)
+
+        val virtualFileWrapper = dialog.save("$type.xml") ?: return
+
+        try {
+            val targetFile = virtualFileWrapper.file
+
+            val xml = buildXml(model, type)
+            FileUtil.writeToFile(targetFile, xml, false)
+
+            Messages.showInfoMessage(
+                "Экспорт успешно завершён:\n${targetFile.absolutePath}",
+                "Успешно"
+            )
+        } catch (e: Exception) {
+            logger.error(e)
+            Messages.showErrorDialog("Ошибка при экспорте: ${e.message}", "Ошибка")
+        }
+    }
+
+    private fun importFromXml(model: DefaultComboBoxModel<String>, type: String, onSave: () -> Unit) {
+        val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor("xml")
+            .withTitle("Import $type from XML")
+
+        val virtualFile = com.intellij.openapi.fileChooser.FileChooser.chooseFile(
+            descriptor, null, null
+        ) ?: return
+
+        try {
+            val file = java.io.File(virtualFile.path)
+            val content = com.intellij.openapi.util.io.FileUtil.loadFile(file)
+
+            val imported = parseXml(content, type)
+
+            if (imported.isNotEmpty()) {
+                model.removeAllElements()
+                imported.forEach { model.addElement(it) }
+
+                onSave()
+                Messages.showInfoMessage("Импортировано ${imported.size} записей", "Успешно")
+            } else {
+                Messages.showWarningDialog("Файл не содержит записей", "Предупреждение")
+            }
+        } catch (e: Exception) {
+            logger.error(e)
+            Messages.showErrorDialog("Ошибка при импорте: ${e.message}", "Ошибка")
+        }
+    }
+
+    private fun buildXml(model: DefaultComboBoxModel<String>, type: String): String {
+        val sb = StringBuilder()
+        sb.appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
+        sb.appendLine("<$type>")
+
+        for (i in 0 until model.size) {
+            val item = model.getElementAt(i)?.trim() ?: continue
+            if (item.isNotBlank()) {
+                sb.appendLine("    <item>${escapeXml(item)}</item>")
+            }
+        }
+
+        sb.appendLine("</$type>")
+        return sb.toString()
+    }
+
+    private fun parseXml(xml: String, type: String): List<String> {
+        val items = mutableListOf<String>()
+        val regex = "<item>(.*?)</item>".toRegex(RegexOption.DOT_MATCHES_ALL)
+
+        regex.findAll(xml).forEach { match ->
+            val content = match.groupValues[1].trim()
+            if (content.isNotBlank()) {
+                items.add(unescapeXml(content))
+            }
+        }
+        return items
+    }
+
+    private fun escapeXml(text: String): String =
+        text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&apos;")
+
+    private fun unescapeXml(text: String): String =
+        text.replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&amp;", "&")
+
+    // ==================== Остальные методы без изменений ====================
+
     private fun Row.actionButton(icon: Icon, action: () -> Unit) = button("") { action() }
         .customize(UnscaledGaps(left = 8))
         .applyToComponent {
@@ -142,16 +244,16 @@ data class RequestSettingsPanel(
             putClientProperty("JButton.buttonType", "square")
         }
 
-    // Вспомогательная функция для рендерера с тултипом
     private fun createTooltipRenderer() = object : DefaultListCellRenderer() {
-        override fun getListCellRendererComponent(list: JList<*>, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean): Component {
+        override fun getListCellRendererComponent(
+            list: JList<*>, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean
+        ): Component {
             val c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus) as JComponent
-            if (index >= 0 && value != null) c.toolTipText = value.toString() else c.toolTipText = null
+            if (index >= 0 && value != null) c.toolTipText = value.toString()
             return c
         }
     }
 
-    // Вспомогательные функции для сокращения кода кнопок
     private fun handleAdd(model: DefaultComboBoxModel<String>, msg: String, title: String, onSave: () -> Unit) {
         val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
         if (!result.isNullOrBlank()) {

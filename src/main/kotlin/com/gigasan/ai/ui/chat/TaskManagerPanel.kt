@@ -24,13 +24,15 @@ enum class TaskStatus {
 data class TaskData(
     val id: String,
     var title: String,
-    var footer: String,
-    var content: String,
     var zoneType: String,
-    var request: String,
-    var answer: String,
-    var reasoning: String,
     var status: TaskStatus,
+    var footer: String,
+    //
+    var instruction: String,
+    var question: String,
+    //
+    var reasoning: String,
+    var answer: String,
 )
 
 class TaskManagerPanel : JPanel() {
@@ -182,12 +184,12 @@ class TaskManagerPanel : JPanel() {
 //        centerPanel.add(descriptionArea)
 
         // Нижняя строка — задание для агента
-        val agentTaskArea = JTextArea(task.request)
+        val agentTaskArea = JTextArea(task.question)
         //agentTaskArea.maximumSize = Dimension(Int.MAX_VALUE, agentTaskArea.preferredSize.height)
 //        agentTaskArea.lineWrap = false
 //        //agentTaskArea.wrapStyleWord = true
 //        agentTaskArea.isEditable = true
-        setup(agentTaskArea) { task.request = it }
+        setup(agentTaskArea) { task.question = it }
         centerPanel.add(agentTaskArea)
 
         panel.add(centerPanel, BorderLayout.CENTER)
@@ -277,7 +279,7 @@ class TaskManagerPanel : JPanel() {
             // Если нужно синхронизировать job с UI
             val agentTaskArea = textAreas.getOrNull(1)
             if (agentTaskArea != null) {
-                taskList.getOrNull(index)?.request = agentTaskArea.text
+                taskList.getOrNull(index)?.question = agentTaskArea.text
             }
 
             // При желании можно синхронизировать description или другие поля аналогично

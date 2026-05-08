@@ -1,7 +1,7 @@
 package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.DefaultChatConfigProvider
-import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.ui.FileChooserDialog
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -13,7 +13,7 @@ import com.intellij.openapi.vfs.VirtualFile
 
 class SendFileAction : AnAction("FileChooserDialog", "Open FileChooserDialog", AllIcons.FileTypes.Text) {
     private val logger = Logger.getInstance("SendFileAction")
-    private val settings = PluginSettings()
+    private val settings = PluginSettingsService()
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return

@@ -1,8 +1,9 @@
 package com.gigasan.ai.config
 
 import com.gigasan.ai.config.storage.EndpointSettings
-import com.gigasan.ai.config.storage.PluginSettings
-import com.gigasan.ai.config.storage.ProjectSettings
+import com.gigasan.ai.config.storage.InstructionsService
+import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.intellij.openapi.components.Service
@@ -28,15 +29,17 @@ interface PluginConfigProvider {
     fun buildMaxContext(): Int
     fun buildStream(): Boolean
     fun buildSystem(): String
+    fun buildInstruction(): String
     fun buildRequestBody(prompt: String): JsonObject
     fun buildExtraParams(prompt: String): JsonObject
+
 
 }
 
 @Service(Service.Level.PROJECT) // Без регистрации в plugin.xml!
 class DefaultChatConfigProvider(private val project: Project): PluginConfigProvider {
-    private val global = PluginSettings.instance
-    private val local = ProjectSettings.getInstance(project).state
+    private val global = PluginSettingsService.instance
+    private val local = ProjectSettingsService.getInstance(project).state
 
     override fun buildChatSystem(): String {
         return local.chatSystemPrompt
@@ -89,6 +92,10 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
 
     override fun buildSystem(): String {
         return buildEndpointSetting().system
+    }
+
+    override fun buildInstruction(): String {
+        return InstructionsService.instance.state.selectedInstruction
     }
 
     override fun buildBackend(): BackendEndpoint {

@@ -6,9 +6,9 @@ import com.gigasan.ai.actions.AutoSearchToggleAction
 import com.gigasan.ai.actions.CleanChatAction
 import com.gigasan.ai.actions.RefactorAction
 import com.gigasan.ai.actions.SendFileAction
-import com.gigasan.ai.actions.SendTaskAction
+import com.gigasan.ai.actions.TaskCompositorAction
 import com.gigasan.ai.config.PluginConfigProvider
-import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.core.wrapCode
 import com.gigasan.ai.runtime.ClientStream
 import com.gigasan.ai.runtime.AIMetrics
@@ -126,21 +126,40 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private val logger = Logger.getInstance("ChatPanel")
 
     companion object {
-        fun buildTaskFromString(text: String, request: String): TaskData {
+        fun buildTaskFromString(instruction: String, request: String): TaskData {
             val task = TaskData(
                 id = System.currentTimeMillis().toString(),
                 title = "✏️",
                 //description = "chat message",
-                content = text,
+                //content = text,
                 zoneType = "Chat",
-                request = request,
+                //request = request,
                 answer = "",
                 status = TaskStatus.CREATED,
                 reasoning = "",
                 footer = "",
+                instruction = instruction,
+                question = request,
             )
             return task
         }
+
+        fun buildTaskFromInstructionQuestionTask(instruction: String, question: String): TaskData {
+            val task = TaskData(
+                id = System.currentTimeMillis().toString(),
+                title = "✏️",
+                zoneType = "Compositor",
+                status = TaskStatus.CREATED,
+                footer = "",
+                instruction = instruction,
+                question = question,
+                reasoning = "",
+                answer = "",
+
+            )
+            return task
+        }
+
 
         var instance: ChatPanel? = null
 
@@ -156,7 +175,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         mainGroup.add(Separator.getInstance()) // Визуальный разделитель
 
         // 3. Условная загрузка экшенов из настроек
-        val settings = PluginSettings.instance // Предполагаю, что это синглтон/сервис
+        val settings = PluginSettingsService.instance // Предполагаю, что это синглтон/сервис
 
         if (settings.state.enableDebugFeature) {
             mainGroup.add(AskAction())
@@ -164,8 +183,8 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         if (settings.state.enableFileTransfer) {
             mainGroup.add(SendFileAction())
         }
-        if (settings.state.enableSendTask) {
-            mainGroup.add(SendTaskAction())
+        if (settings.state.enableTaskCompositor) {
+            mainGroup.add(TaskCompositorAction())
         }
         if (settings.state.enableRefactoring) {
             mainGroup.add(RefactorAction())
@@ -187,7 +206,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             val devToolsAction = object : AnAction("DevTools", "Open DevTools", AllIcons.General.Web) {
                 override fun actionPerformed(e: AnActionEvent) {
                     // Используем поиск по компонентам, если DataKey не сработает
-                    val browser = e.getData(ChatPanel.CHAT_BROWSER_KEY)
+                    val browser = e.getData(CHAT_BROWSER_KEY)
                     browser?.cefBrowser?.openDevTools()
                 }
             }
@@ -403,14 +422,13 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                         val task = TaskData(
                             id = System.currentTimeMillis().toString(),
                             title = "📂",
-                            //description = files.joinToString(" ") { it.name },
-                            content = files.joinToString("\n") { it.absolutePath },
                             zoneType = "File",
-                            request = "check errors",
                             answer = "",
                             status = TaskStatus.ERROR,
                             reasoning = "",
                             footer = "",
+                            instruction = "",
+                            question = files.joinToString("\n") { it.absolutePath },
                         )
                         taskManagerPanel.addTask(task)
                         event.dropComplete(true)
@@ -427,13 +445,15 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                                 id = System.currentTimeMillis().toString(),
                                 title = "📝",
                                 //description = "$fileName ${lines.first}-${lines.last}",
-                                content = text,
+                                //content = text,
                                 zoneType = "Editor",
-                                request = "check errors",
+                                //request = "check errors",
                                 answer = "",
                                 status = TaskStatus.CREATED,
                                 reasoning = "",
                                 footer = "",
+                                instruction = "",
+                                question = "",
                             )
                         } else {
                             // any other data
@@ -447,14 +467,13 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                             TaskData(
                                 id = System.currentTimeMillis().toString(),
                                 title = "📄",
-                                //description = preview,
-                                content = droppedText,
                                 zoneType = "External",
-                                request = "check errors",
                                 answer = "",
                                 status = TaskStatus.CREATED,
                                 reasoning = "",
                                 footer = "",
+                                instruction = "",
+                                question = droppedText,
                             )
                         }
                         taskManagerPanel.addTask(task)
@@ -541,7 +560,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     }
 
     fun installShortcuts(root: JComponent, searchPanel: JPanel) {
-        val im = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+        val im = root.getInputMap(WHEN_IN_FOCUSED_WINDOW)
         val am = root.getActionMap()
 
         // Основные шорткаты
@@ -611,7 +630,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         updateTimer?.start()
     }
 
-    // TaskData -> ChatBlock
+    // WorkItem -> ChatBlock
     fun rebuildChatBlocksFromTasks() {
         val tasks = taskManagerPanel.getAllTasks()
         renderChatBlocks(tasks)
@@ -620,8 +639,8 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     fun buildTaskHtml(task: TaskData): String {
 
         val description = AIMetrics.buildDescription(
-            request = task.request,
-            content = task.content,
+            request = task.question,
+            content = "",
             status = task.status,
             maxLen = 100
         )
@@ -633,19 +652,19 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             append("<summary class='chat-header' ${data_task_id}>${task.title} ${description}</summary>\n")
             append("<div class='chat-body'>")
             append("<div class='chat'>")
-                if (task.request.isNotBlank()) {
+                if (task.question.isNotBlank()) {
                     append("<div class='bubble-user'>")
                     append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
-                    append(MarkdownRenderer.toHtml(task.request))
+                    append(MarkdownRenderer.toHtml(task.question))
                     append("</div>")
                 }
 
-                if (task.content.isNotBlank()) {
-                    append("<div class='bubble-user'>")
-                    append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
-                    append(MarkdownRenderer.toHtml(task.content))
-                    append("</div>")
-                }
+//                if (task.content.isNotBlank()) {
+//                    append("<div class='bubble-user'>")
+//                    append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
+//                    append(MarkdownRenderer.toHtml(task.content))
+//                    append("</div>")
+//                }
 
                 if (task.answer.isNotBlank() || task.reasoning.isNotBlank()) {
                     append("<div class='bubble-assistant'>")
@@ -742,18 +761,17 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         indicator.checkCanceled()
     }
 
-    fun processTask(task: TaskData, indicator: ProgressIndicator): TaskResult {
+    fun processChatTask(task: TaskData, indicator: ProgressIndicator): TaskResult {
         return try {
-            val model = provider.buildChatModel()
             //logger.info("task = $task")
             //logger.info("model = $model")
-            val request = "${task.request} ${task.content}".trimIndent()
+            val request = task.question.trimIndent()
             val chatContext = ChatRequestBuilder(project)
                 .system(provider.buildChatSystem())
                 .memory(limit = 5)
                 .user(request)
                 .stream(provider.buildStream())
-                .model(model)
+                .model(provider.buildChatModel())
                 .maxTokens(provider.buildMaxTokenLimit())
                 .build(task)
             logger.info("$chatContext")
@@ -767,7 +785,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 stateManager = stateManager,
                 stateMachine = stateMachine
             )
-            //val toolClient = ToolOrchestrator(AIClientPost()) // url, api and backend from PluginSettings
+            //val toolClient = ToolOrchestrator(AIClientPost()) // url, api and backend from PluginSettingsService
             val startTime = System.currentTimeMillis()
             val responseResult = clientStream.execute(project, chatContext, indicator) { event ->
                 onStreamEvent(event, indicator)
@@ -825,13 +843,13 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
     }
 
-    fun runTaskInBackground(
+    fun runChatTaskInBackground(
         project: Project?,
         task: TaskData,
         onUpdate: (TaskData) -> Unit
     ) {
         // Включаем canBeCancelled = true (третий параметр)
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "AI Processing", true) {
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Ai processing", true) {
 
             override fun run(indicator: ProgressIndicator) {
                 indicator.text = "Подготовка запроса..."
@@ -839,7 +857,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
                 // Передаем индикатор в процесс, чтобы внутри цикла чтения
                 // делать индикатор.checkCanceled()
-                when (val result = processTask(task, indicator)) {
+                when (val result = processChatTask(task, indicator)) {
                     is TaskResult.Success -> {
                         MemorySystem.add(result.task)
                         onUpdate(result.task)
@@ -868,14 +886,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private fun sendMessage() {
         val mainText = inputField.text.trim()
         if (mainText.isEmpty()) return
-        val task = buildTaskFromString(mainText, "")
+        val task = buildTaskFromString(provider.buildInstruction(), mainText)
         inputField.text = ""
 
         taskManagerPanel.addTask(task)
 
         updateTaskStatus(task, TaskStatus.SENDING)
 
-        runTaskInBackground(project, task) { updatedTask ->
+        runChatTaskInBackground(project, task) { updatedTask ->
             updateTaskOnUI(updatedTask)
         }
 
@@ -941,12 +959,20 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
     }
 
-
-    fun sendExternalMessage(text: String, request: String = "") {
-        val task = buildTaskFromString(text, request)
+    fun sendInstructionQuestionTask(instruction: String, question: String) {
+        val task = buildTaskFromInstructionQuestionTask(instruction, question)
         taskManagerPanel.addTask(task)
         updateTaskStatus(task, TaskStatus.SENDING)
-        runTaskInBackground(project, task) { updatedTask ->
+        runChatTaskInBackground(project, task) { updatedTask ->
+            updateTaskOnUI(updatedTask)
+        }
+    }
+
+    fun sendExternalMessage(text: String) {
+        val task = buildTaskFromString(provider.buildInstruction(), text)
+        taskManagerPanel.addTask(task)
+        updateTaskStatus(task, TaskStatus.SENDING)
+        runChatTaskInBackground(project, task) { updatedTask ->
             updateTaskOnUI(updatedTask)
         }
     }
@@ -1051,13 +1077,12 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
         //logger.info("html=$html")
 
-
         // scan plain text for language
         val regex = Regex("```(\\w+)")
         val allText = tasks.joinToString("\n") { task ->
             listOf(
-                task.request,
-                task.content,
+                task.question,
+                "",
                 task.answer
             ).joinToString("\n")
         }

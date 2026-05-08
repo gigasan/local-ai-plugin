@@ -2,7 +2,7 @@ package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.DefaultChatConfigProvider
 import com.gigasan.ai.ui.RefactorDialog
-import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -12,7 +12,7 @@ import com.intellij.openapi.diagnostic.Logger
 
 class RefactorAction: AnAction("Refactor", "Send/Find code block from project to refactor", AllIcons.Actions.ShowCode)  {
     private val logger = Logger.getInstance("RefactorAction")
-    private val settings = PluginSettings()
+    private val settings = PluginSettingsService()
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return

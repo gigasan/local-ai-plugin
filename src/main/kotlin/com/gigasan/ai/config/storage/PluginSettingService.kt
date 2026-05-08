@@ -1,34 +1,36 @@
 package com.gigasan.ai.config.storage
 
 import com.gigasan.ai.config.BackendEndpoint
-import com.gigasan.ai.config.SettingsChangeListener
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.*
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.observable.properties.GraphProperty
 import com.intellij.openapi.observable.properties.PropertyGraph
+import com.intellij.util.xmlb.annotations.Tag
 import com.intellij.util.xmlb.annotations.XMap
 
 // 1. Указываем имя файла, в котором будут лежать настройки (в папке конфигов IDE)
-@State(name = "com.gigasan.localai.config.PluginSettings", storages = [Storage("PluginSettings.xml")])
+@State(name = "com.gigasan.localai.config.PluginSettingsService", storages = [Storage("PluginSettingsService.xml")])
 @Service(Service.Level.APP)
-class PluginSettings : PersistentStateComponent<PluginSettings.State> {
-    private val logger = Logger.getInstance("PluginSettings")
+class PluginSettingsService : PersistentStateComponent<PluginSettingsService.State> {
+    private val logger = Logger.getInstance("PluginSettingsService")
 
     data class State(
-        // project modules
+        // base functions
         var enableChat: Boolean = true,
+        var enableSettingsAction: Boolean = true,
 
         // toolbar actions
         var enableDebugFeature: Boolean = true,
-        var enableSendTask: Boolean = true,
+        var enableTaskCompositor: Boolean = true,
+        var enableCleanChat: Boolean = true,
+        var enableAutoSearch: Boolean = true,
+        var enableDevToolsAction: Boolean = false,
+
+        // deprecated
         var enableFileTransfer: Boolean = false,
         var enableRefactoring: Boolean = false,
         var enableCodeAnalysis: Boolean = false,
-        var enableCleanChat: Boolean = true,
-        var enableAutoSearch: Boolean = true,
-        var enableSettingsAction: Boolean = true,
-        var enableDevToolsAction: Boolean = false,
 
         // backends
         var allowedBackendEndpoints: Set<BackendEndpoint> = setOf(
@@ -60,7 +62,7 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
     }
 
     // Вспомогательный граф
-    private val graph: PropertyGraph = PropertyGraph("PluginSettings")
+    private val graph: PropertyGraph = PropertyGraph("PluginSettingsService")
 
     // Создаём observable свойства по требованию
     fun getSystemProperty(endpoint: BackendEndpoint): GraphProperty<String> {
@@ -96,6 +98,30 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
     }
 
     companion object {
-        val instance: PluginSettings get() = service()
+        val instance: PluginSettingsService get() = service()
     }
 }
+
+@Tag("Endpoint")
+data class EndpointSettings(
+
+    // connection
+    var baseUrl: String = "",
+    var modelListEndpointUrl: String = "",
+    var chatEndpointUrl: String = "",
+    var apiKey: String = "",
+
+    // model
+    var selectedModelName: String = "",
+    var selectedModelKey: String = "",
+    //   V
+    var system: String = "",
+    var maxContext: Int = 16384,
+    var maxTokenLimit: Int = 4000,
+    var reasoning: Boolean = false,
+    var stream: Boolean = false,
+    var temperature: Float = 0.7f,
+    var logprobs: Boolean = false,
+    var top_logprobs: Int = 0,
+    var keep_alive: Int = 5,
+)

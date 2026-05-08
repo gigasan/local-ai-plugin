@@ -4,8 +4,8 @@ import com.gigasan.ai.config.storage.EndpointSettings
 import com.gigasan.ai.config.storage.Model
 import com.gigasan.ai.config.storage.ModelCache
 import com.gigasan.ai.config.storage.ModelCacheService
-import com.gigasan.ai.config.storage.PluginSettings
-import com.gigasan.ai.config.storage.ProjectSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
@@ -24,15 +24,15 @@ import okhttp3.internal.toLongOrDefault
 class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Local AI Settings"), JsonFileLogger {
     private val logger = Logger.getInstance("PluginSettingsConfigurable")
 
-    private val pluginSettings = PluginSettings.instance
-    private val projectSettings = ProjectSettings.getInstance(project)
+    private val pluginSettingsService = PluginSettingsService.instance
+    private val projectSettingsService = ProjectSettingsService.getInstance(project)
 
     //var endpointSettings: EndpointSettings
     private var modelCache: ModelCache =
-        ModelCacheService.instance.getSettingsFor(projectSettings.state.backendEndpoint)
+        ModelCacheService.instance.getSettingsFor(projectSettingsService.state.backendEndpoint)
 
     private val availableBackendEndpoints = BackendEndpoint.entries.filter { type ->
-        type == BackendEndpoint.LM_STUDIO_ENDPOINT || pluginSettings.state.allowedBackendEndpoints.contains(type)
+        type == BackendEndpoint.LM_STUDIO_ENDPOINT || pluginSettingsService.state.allowedBackendEndpoints.contains(type)
     }
 
     // Храним модели, чтобы обновлять их динамически
@@ -60,8 +60,8 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
             modelsComboBox = ComboBox<String>(),
             modelsList = mutableListOf<Model>(),
             isLoading = false,
-            endpointSettings = pluginSettings.getSettingsFor(projectSettings.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
-            selectedEndpoint = projectSettings.state.backendEndpoint,
+            endpointSettings = pluginSettingsService.getSettingsFor(projectSettingsService.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
+            selectedEndpoint = projectSettingsService.state.backendEndpoint,
         )
         lateinit var modelSettingsPanel: DialogPanel
         fun refreshUIFromModel(mcc: ModelSettingsPanel) {
@@ -75,7 +75,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
         logger.info("createPanel enter")
 
         // После создания backendModel и до collapsibleGroup
-        updateDependentCombos(projectSettings.state.backendEndpoint, msp.endpointSettings, modelCache)
+        updateDependentCombos(projectSettingsService.state.backendEndpoint, msp.endpointSettings, modelCache)
 
         myPanel = panel {
             // Регистрируем вашу внешнюю панель в жизненном цикле этой DSL панели
@@ -88,14 +88,14 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                     comboBox(backendModel)
                         .bindItem(
                             getter = {
-                                projectSettings.state.backendEndpoint
+                                projectSettingsService.state.backendEndpoint
                             },
                             setter = { newBackend ->
                                 if (newBackend != null) {
-                                    projectSettings.state.backendEndpoint = newBackend
-//                                    endpointSettings = pluginSettings.getSettingsFor(newBackend)
+                                    projectSettingsService.state.backendEndpoint = newBackend
+//                                    endpointSettings = pluginSettingsService.getSettingsFor(newBackend)
 //                                    logger.info("SET ${newBackend} Updated $endpointSettings")
-//                                    modelCache = ModelCacheService.instance.getSettingsFor(projectSettings.state.backendEndpoint)
+//                                    modelCache = ModelCacheService.instance.getSettingsFor(projectSettingsService.state.backendEndpoint)
 //                                    logger.info("SET ${newBackend} Updated $modelCache")
                                 }
                             }
@@ -103,10 +103,10 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                         .onChangedContext { component, context ->
                             //val selectedEndpoint = component.selectedItem as BackendEndpoint
                             msp.selectedEndpoint = component.selectedItem as BackendEndpoint
-                            msp.endpointSettings = pluginSettings.getSettingsFor(msp.selectedEndpoint)
+                            msp.endpointSettings = pluginSettingsService.getSettingsFor(msp.selectedEndpoint)
                             //logger.info("Backend.onChangedContext ${component.selectedItem} Updated $endpointSettings")
                             modelCache =
-                                ModelCacheService.instance.getSettingsFor(projectSettings.state.backendEndpoint)
+                                ModelCacheService.instance.getSettingsFor(projectSettingsService.state.backendEndpoint)
                             //logger.info("Backend.onChangedContext ${component.selectedItem} Updated $modelCache")
                             updateDependentCombos(msp.selectedEndpoint, msp.endpointSettings, modelCache)
                             refreshUIFromModel(msp)
@@ -187,9 +187,9 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
 //                }
             }.apply {
                 // Разворачиваем группу сразу после создания
-                expanded = projectSettings.state.connectionExpanded
+                expanded = projectSettingsService.state.connectionExpanded
                 addExpandedListener { isExpanded ->
-                    projectSettings.state.connectionExpanded = isExpanded
+                    projectSettingsService.state.connectionExpanded = isExpanded
                 }
             }
 
@@ -201,15 +201,15 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                     textField()
                         .resizableColumn().align(AlignX.FILL)
                         .bindText(
-                            getter = { projectSettings.state.chatSystemPrompt },
-                            setter = { text -> projectSettings.state.chatSystemPrompt = text }
+                            getter = { projectSettingsService.state.chatSystemPrompt },
+                            setter = { text -> projectSettingsService.state.chatSystemPrompt = text }
                         )
                 }
             }.apply {
                 // Разворачиваем группу сразу после создания
-                expanded = projectSettings.state.chatExpanded
+                expanded = projectSettingsService.state.chatExpanded
                 addExpandedListener { isExpanded ->
-                    projectSettings.state.chatExpanded = isExpanded
+                    projectSettingsService.state.chatExpanded = isExpanded
                 }
             }
 
@@ -221,43 +221,43 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                     label("Font family:")
                     comboBox(monoFonts.toList())
                         .bindItem(
-                            getter = { projectSettings.state.fontName },
-                            setter = { value: String? -> projectSettings.state.fontName = value?:"" }
+                            getter = { projectSettingsService.state.fontName },
+                            setter = { value: String? -> projectSettingsService.state.fontName = value?:"" }
                             )
                     label("Size:")
                     spinner(8..72)
-                        .bindIntValue(projectSettings.state::fontSize)
+                        .bindIntValue(projectSettingsService.state::fontSize)
                     checkBox("Wrap lines")
                         .bindSelected(
-                            getter = { projectSettings.state.useSoftWrap },
-                            setter = { value: Boolean -> projectSettings.state.useSoftWrap = value }
+                            getter = { projectSettingsService.state.useSoftWrap },
+                            setter = { value: Boolean -> projectSettingsService.state.useSoftWrap = value }
                         )
                 }
                 row("Enqueue:") {
                     checkBox("Select entire lines")
                         .bindSelected(
-                            getter = { projectSettings.state.selectEntireLines },
-                            setter = { value: Boolean -> projectSettings.state.selectEntireLines = value }
+                            getter = { projectSettingsService.state.selectEntireLines },
+                            setter = { value: Boolean -> projectSettingsService.state.selectEntireLines = value }
                         )
                 }
             }.apply {
                 // Разворачиваем группу сразу после создания
-                expanded = projectSettings.state.promptsExpanded
+                expanded = projectSettingsService.state.promptsExpanded
                 addExpandedListener { isExpanded ->
-                    projectSettings.state.promptsExpanded = isExpanded
+                    projectSettingsService.state.promptsExpanded = isExpanded
                 }
             }
 
 
 
             // Запускаем загрузку моделей сразу при создании панели
-            msp.loadModelsAsync(project, projectSettings.state.backendEndpoint, msp)
+            msp.loadModelsAsync(project, projectSettingsService.state.backendEndpoint, msp)
 
             // Кастомные callbacks
             onApply {
                 logger.info("onApply")
                 modelSettingsPanel.apply()
-                projectSettings.notifyChange(project)
+                projectSettingsService.notifyChange(project)
             }
             onReset {
                 logger.info("onReset")

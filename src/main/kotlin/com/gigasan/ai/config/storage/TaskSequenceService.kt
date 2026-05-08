@@ -7,33 +7,31 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 
-// State класс — то, что именно будет записываться в XML
-class MyPluginState {
-    var plugins: MutableList<MyPluginData> = mutableListOf()
-}
-
 @Service(Service.Level.PROJECT) // Или .APP, если данные общие для всех проектов
-@State(
-    name = "MyPluginSettings",
-    storages = [Storage("MyPluginSettings.xml")]
-)
-class MyPluginSettingsService : PersistentStateComponent<MyPluginState> {
+@State(name = "TaskSequenceService", storages = [Storage("TaskSequenceService.xml")])
+class TaskSequenceService : PersistentStateComponent<TaskSequence> {
 
-    private var myState = MyPluginState()
+    private var myState = TaskSequence()
 
-    override fun getState(): MyPluginState = myState
+    override fun getState(): TaskSequence = myState
 
-    override fun loadState(state: MyPluginState) {
+    override fun loadState(state: TaskSequence) {
         myState = state
     }
 
     companion object {
-        fun getInstance(project: Project): MyPluginSettingsService =
-            project.service<MyPluginSettingsService>()
+        fun getInstance(project: Project): TaskSequenceService =
+            project.service<TaskSequenceService>()
     }
 }
 
-data class MyPluginData(
+// State класс — то, что именно будет записываться в XML
+//@Tag("TaskSequence")
+data class TaskSequence(
+    var items: MutableList<WorkItem> = mutableListOf()
+)
+
+data class WorkItem(
     var name: String = "",
     var author: String = "",
     var version: String = "",

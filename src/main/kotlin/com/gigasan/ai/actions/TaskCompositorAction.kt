@@ -1,7 +1,7 @@
 package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.DefaultChatConfigProvider
-import com.gigasan.ai.config.storage.PluginSettings
+import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.ui.TaskCompositorDialog
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -10,9 +10,9 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.diagnostic.Logger
 
-class SendTaskAction : AnAction("TaskCompositorDialog", "Open TaskCompositorDialog", AllIcons.Actions.AddList) {
-    private val logger = Logger.getInstance("SendTaskAction")
-    private val settings = PluginSettings()
+class TaskCompositorAction : AnAction("TaskCompositorDialog", "Open TaskCompositorDialog", AllIcons.Actions.AddList) {
+    private val logger = Logger.getInstance("TaskCompositorAction")
+    private val settings = PluginSettingsService()
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -46,7 +46,7 @@ class SendTaskAction : AnAction("TaskCompositorDialog", "Open TaskCompositorDial
         }
         val editor = e.getData(CommonDataKeys.EDITOR)
         val lang = e.getData(CommonDataKeys.LANGUAGE)
-        val dynamicText = "SendTaskAction $editor $lang"
+        val dynamicText = "TaskCompositorAction $editor $lang"
         e.presentation.setText(dynamicText)
         //editor?.document?.setText(lang.toString())
         //e.presentation.isEnabledAndVisible = editor?.selectionModel?.selectedText?.isNotBlank() == true
@@ -54,7 +54,7 @@ class SendTaskAction : AnAction("TaskCompositorDialog", "Open TaskCompositorDial
         val prov = DefaultChatConfigProvider(project)
         val model = prov.buildEndpointSetting().selectedModelName
         e.presentation.isEnabled = model.isNotBlank()
-        e.presentation.isEnabledAndVisible = settings.state.enableSendTask
+        e.presentation.isEnabledAndVisible = settings.state.enableTaskCompositor
     }
 
 
