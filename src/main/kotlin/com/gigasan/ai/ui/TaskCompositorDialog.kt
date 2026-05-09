@@ -6,6 +6,8 @@ import com.gigasan.ai.config.storage.TaskSequenceService
 import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.config.storage.InstructionsService
+import com.gigasan.ai.config.storage.ModelCache
+import com.gigasan.ai.config.storage.ModelCacheService
 import com.gigasan.ai.core.wrapCode
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.gigasan.ai.ui.chat.ChatPanel.Companion.CHAT_BROWSER_KEY
@@ -54,6 +56,7 @@ class TaskCompositorDialog(
     private val logger = Logger.getInstance("TaskCompositorDialog")
     private val pluginSettingsService = PluginSettingsService.instance
     private val projectSettingsService = ProjectSettingsService.getInstance(project)
+    private var modelCache: ModelCache = ModelCacheService.instance.getSettingsFor(projectSettingsService.state.backendEndpoint)
     val taskSequenceService = TaskSequenceService.getInstance(project).state
 
     // список (Левая часть)
@@ -90,7 +93,8 @@ class TaskCompositorDialog(
     var msp = ModelSettingsPanel(
         project,
         modelsComboBox = ComboBox<String>(),
-        modelsList = mutableListOf<Model>(),
+        modelsList = modelCache.models.toMutableList(),
+        selectedModel = null,
         isLoading = false,
         endpointSettings = pluginSettingsService.getSettingsFor(projectSettingsService.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
         selectedEndpoint = projectSettingsService.state.backendEndpoint,

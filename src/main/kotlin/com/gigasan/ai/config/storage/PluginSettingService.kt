@@ -116,12 +116,12 @@ data class EndpointSettings(
     var selectedModelKey: String = "",
     //   V
     var system: String = "",
-    var maxContext: Int = 16384,
-    var maxTokenLimit: Int = 4000,
-    var reasoning: Boolean = false,
+    var maxContext: Long = 16384,
+    var maxTokenLimit: Long = 16000,
+    var reasoning: String = "",
     var stream: Boolean = false,
     var temperature: Float = 0.7f,
     var logprobs: Boolean = false,
     var top_logprobs: Int = 0,
-    var keep_alive: Int = 5,
+    var keep_alive: Int = 60,
 )

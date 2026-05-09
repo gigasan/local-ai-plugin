@@ -32,13 +32,13 @@ class ModelParser(project: Project) {
         val architecture: String? = null,
         val publisher: String? = null,
         val params_string: String? = null,
-        val max_context_length: Int? = null,
+        val max_context_length: Long? = null,
         val quantization: Quantization? = null,
         val capabilities: Capabilities? = null,
         val type: String? = null, // .filter { it.type == "llm" }
         val description: String? = null,
-        val loaded_instances: ArrayList<Instances>? = null,
-        val variants: ArrayList<String>? = null,
+        val loaded_instances: List<Instances>? = null,
+        val variants: List<String>? = null,
         val selected_variant: String? = null,
     )
 
@@ -74,15 +74,8 @@ class ModelParser(project: Project) {
     @Serializable
     data class Reasoning(
         val default: String? = null,
-        val allowed_options: ArrayList<String>? = null,
+        val allowed_options: List<String>? = null,
     )
-
-    @Serializable
-    data class AllowedOptions(
-        val default: String? = null,
-        val allowed_options: Int? = null,
-    )
-
 
     fun LmStudioModel.toModel(): Model {
         return Model(
@@ -95,7 +88,9 @@ class ModelParser(project: Project) {
             arc = architecture ?: "unknown",
             maxContext = max_context_length ?: 0,
             tools = capabilities?.trained_for_tool_use ?: false,
-            source = Source.LM_STUDIO
+            source = Source.LM_STUDIO,
+            reasoningOptions = capabilities?.reasoning?.allowed_options ?: emptyList(),
+            defaultReasoning = capabilities?.reasoning?.default
         )
     }
 
@@ -121,7 +116,7 @@ class ModelParser(project: Project) {
         val parent_model: String? = null,
         val format: String? = null,
         val family: String? = null,
-        val families: ArrayList<String>? = null,
+        val families: List<String>? = null,
         val parameter_size: String? = null,
         val quantization_level: String? = null
     )
@@ -137,7 +132,8 @@ class ModelParser(project: Project) {
             arc = details?.family ?: "unknown",
             maxContext = 0, // нет в Ollama
             tools = false, // нет в Ollama
-            source = Source.OLLAMA
+            source = Source.OLLAMA,
+            reasoningOptions = emptyList(), // нет в Ollama
         )
     }
 
@@ -170,16 +166,22 @@ class ModelParser(project: Project) {
             arc = "unknown",    // нет в OpenAI
             maxContext = 0,     // нет в OpenAI
             tools = false,      // нет в OpenAI
-            source = Source.OPEN_AI
+            source = Source.OPEN_AI,
+            reasoningOptions = emptyList(), // нет в OpenAI
         )
     }
 
+
+
     fun parseModels(jsonString: String, apiId: Int): List<Model> {
         val json = Json
-//            ignoreUnknownKeys = true
-//            coerceInputValues = true
-//            isLenient = true
-//    }
+
+        /*
+        val json = Json {
+            ignoreUnknownKeys = true
+            coerceInputValues = true
+        }
+        */
 
         val list = try {
             when (BackendApi.fromId(apiId)) {

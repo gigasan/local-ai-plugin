@@ -232,7 +232,7 @@ object OllamaAdapter: JsonFileLogger {
             // format enum:string json
 
             put("stream", ctx.stream) // default true
-            put("think", ctx.think)
+            put("think", ctx.reasoning)
             put("keep_alive", "${ctx.keep_alive}m")
 
 
@@ -267,12 +267,10 @@ object LmStudioAdapter: JsonFileLogger {
             put("max_output_tokens", ctx.maxTokens)
             put("context_length", ctx.contextLen)
             put("stream", ctx.stream)
-            val reasoning = when (ctx.think) {
-                true -> "on"
-                false -> "off"
-            }
             // depends on model capability reasoning otherwise error
-            //put("reasoning", reasoning)
+            if (ctx.reasoning != null) {
+                put("reasoning", ctx.reasoning)
+            }
 
         }
         logger.info("LmStudioAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО

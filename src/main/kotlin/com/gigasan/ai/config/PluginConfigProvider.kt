@@ -2,6 +2,8 @@ package com.gigasan.ai.config
 
 import com.gigasan.ai.config.storage.EndpointSettings
 import com.gigasan.ai.config.storage.InstructionsService
+import com.gigasan.ai.config.storage.ModelCache
+import com.gigasan.ai.config.storage.ModelCacheService
 import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.google.gson.JsonArray
@@ -23,11 +25,12 @@ interface PluginConfigProvider {
     fun buildChatEndpoint(): String
     fun buildChatModel(): String
     fun buildApiKey(): String
-    fun buildMaxTokenLimit(): Int
+    fun buildMaxTokenLimit(): Long
     fun buildKeepAlive(): Int
     fun buildTemperature(): Float
-    fun buildMaxContext(): Int
+    fun buildMaxContext(): Long
     fun buildStream(): Boolean
+    fun buildReasoning(): String?
     fun buildSystem(): String
     fun buildInstruction(): String
     fun buildRequestBody(prompt: String): JsonObject
@@ -45,10 +48,10 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
         return local.chatSystemPrompt
     }
     override fun buildSelectWholeLone(): Boolean {
-        return local.selectEntireLines.or(false)
+        return local.selectEntireLines
     }
     override fun buildUseSoftWrap(): Boolean {
-        return local.useSoftWrap.or(false)
+        return local.useSoftWrap
     }
 
     /**
@@ -66,20 +69,20 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
         return buildEndpointSetting().apiKey.trim()
     }
 
-    override fun buildMaxTokenLimit(): Int {
-        return buildEndpointSetting().maxTokenLimit.or(4096)
+    override fun buildMaxTokenLimit(): Long {
+        return buildEndpointSetting().maxTokenLimit
     }
 
     override fun buildKeepAlive(): Int {
-        return buildEndpointSetting().keep_alive.or(5)
+        return buildEndpointSetting().keep_alive
     }
 
     override fun buildTemperature(): Float {
         return buildEndpointSetting().temperature
     }
 
-    override fun buildMaxContext(): Int {
-        return buildEndpointSetting().maxContext.or(16384)
+    override fun buildMaxContext(): Long {
+        return buildEndpointSetting().maxContext
     }
 
     override fun buildChatModel(): String {
@@ -87,8 +90,26 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
     }
 
     override fun buildStream(): Boolean {
-        return buildEndpointSetting().stream.or(false)
+        return buildEndpointSetting().stream
     }
+
+    override fun buildReasoning(): String? {
+        val modelCache: ModelCache = ModelCacheService.instance.getSettingsFor(buildBackend())
+        val model = modelCache.models.find { model ->
+            model.key == buildEndpointSetting().selectedModelKey
+        }
+        val reasoning = buildEndpointSetting().reasoning
+        if (model != null) {
+            if (model.reasoningOptions.contains(reasoning)) {
+                return reasoning
+            }
+            return model.defaultReasoning
+        }
+        return null
+    }
+
+
+
 
     override fun buildSystem(): String {
         return buildEndpointSetting().system

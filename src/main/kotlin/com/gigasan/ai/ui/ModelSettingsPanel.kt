@@ -9,6 +9,7 @@ import com.gigasan.ai.config.storage.ModelCache
 import com.gigasan.ai.config.storage.ModelCacheService
 import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.config.storage.ProjectSettingsService
+import com.gigasan.ai.config.storage.supportsReasoning
 import com.gigasan.ai.core.FileLogger
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -17,8 +18,11 @@ import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
+import com.jetbrains.rd.swing.visibleProperty
 import com.jetbrains.rd.util.URI
+import java.awt.Label
 import java.net.HttpURLConnection
+import javax.swing.JLabel
 import javax.swing.SwingUtilities
 
 data class ModelSettingsPanel(
@@ -28,7 +32,7 @@ data class ModelSettingsPanel(
     // Основные изменяемые компоненты
     val modelsComboBox: ComboBox<String>,
     val modelsList: MutableList<Model> = mutableListOf(),
-
+    var selectedModel: Model? = null,
     // Эти поля должны быть изменяемыми снаружи и внутри
     var isLoading: Boolean = false,
     var endpointSettings: EndpointSettings,
@@ -37,24 +41,43 @@ data class ModelSettingsPanel(
     // Дополнительно — можно добавить колбэки, если нужно
     var onModelsLoaded: ((List<Model>) -> Unit)? = null,
 
+
+
     ) {
     val logger = Logger.getInstance("ModelSettingsPanel")
 
+    //var reasoningRow: Row? = null
+    lateinit var reasoningComboBox: ComboBox<String>
+    lateinit var labelReasoning: JLabel
 
-    //fun Panel.commonModelSettings(components: ModelSettingsPanel) {
     fun createModelSettingsPanel(components: ModelSettingsPanel): DialogPanel {
         val project = components.project
         val settings = ProjectSettingsService.getInstance(project)
+        selectedModel = components.modelsList.find { it.displayName == components.endpointSettings.selectedModelName }
         return panel { // Создаем новую изолированную панель
             collapsibleGroup("Model Settings (Endpoint Dependent)") {
                 row("Model:") {
                     cell(components.modelsComboBox) // Используем конкретный экземпляр
                         .resizableColumn()
                         .align(AlignX.FILL)
+                        .applyToComponent {
+                            // Добавляем слушатель изменений
+                            addActionListener {
+                                val selectedName = selectedItem as? String
+                                val model = components.modelsList.find { it.displayName == selectedName }
+                                components.selectedModel = model
+
+                                // ВЫЗОВ ОБНОВЛЕНИЯ (см. далее)
+                                updateReasoningUI(model, components, reasoningComboBox, labelReasoning)
+                            }
+                        }
                         .bindItem(
                             getter = { components.endpointSettings.selectedModelName },
                             setter = { newName ->
                                 components.endpointSettings.selectedModelName = newName.orEmpty()
+//                                val found = components.modelsList.find { it.displayName == newName }
+//                                components.selectedModel = found
+//                                found?.let { components.endpointSettings.selectedModelKey = it.key }
                                 val selectedModel = components.modelsList.find { it.displayName == newName }
                                 if (selectedModel != null) {
                                     components.endpointSettings.selectedModelKey = selectedModel.key
@@ -65,6 +88,7 @@ data class ModelSettingsPanel(
                         loadModelsAsync(project, components.selectedEndpoint, components)
                     }.align(AlignX.RIGHT)
                 }
+
                 row("System:") {
                     textField()
                         .resizableColumn().align(AlignX.FILL)
@@ -75,32 +99,50 @@ data class ModelSettingsPanel(
                 }.visible(false)
                 row() {
                     label("Max context:")
-                    intTextField()
-                        .bindIntText(
-                            getter = { components.endpointSettings.maxContext },
-                            setter = { value: Int -> components.endpointSettings.maxContext = value }
+                    textField()
+                        .bindText(
+                            getter = { components.endpointSettings.maxContext.toString() },
+                            setter = { value: String ->
+                                components.endpointSettings.maxContext = value.toLongOrNull() ?: 0L
+                            }
                         )
+                        .columns(10)                    // ширина поля
                     label("Token limit:")
-                    intTextField()
-                        .bindIntText(
-                            getter = { components.endpointSettings.maxTokenLimit },
-                            setter = { value: Int -> components.endpointSettings.maxTokenLimit = value }
+                    textField()
+                        .bindText(
+                            getter = { components.endpointSettings.maxTokenLimit.toString() },
+                            setter = { value: String ->
+                                components.endpointSettings.maxTokenLimit = value.toLongOrNull() ?: 0L
+                            }
                         )
+                        .columns(10)                    // ширина поля
                     label("Keep alive, min:")
                     intTextField()
                         .bindIntText(
                             getter = { components.endpointSettings.keep_alive },
                             setter = { value: Int -> components.endpointSettings.keep_alive = value }
                         )
+
+                    labelReasoning = label("Reasoning:").component
+                    reasoningComboBox = comboBox(emptyList<String>())
+                        .bindItem(
+                            // БЕЗОПАСНАЯ ПРИВЯЗКА без toNullableProperty
+                            getter = { components.endpointSettings.reasoning },
+                            setter = { components.endpointSettings.reasoning = it ?: "" } // Защита от null
+                        )
+                        .visible(false)
+                        .component
+                    labelReasoning.isVisible = reasoningComboBox.isVisible
                 }
+
+
                 row() {
+
                     checkBox("Stream")
                         .bindSelected(
                             getter = { components.endpointSettings.stream },
                             setter = { value: Boolean -> components.endpointSettings.stream = value }
                         )
-
-                    checkBox("Think").bindSelected(components.endpointSettings::reasoning)
                     val cb = checkBox("Logprobs")
                         .bindSelected(
                             getter = { components.endpointSettings.logprobs },
@@ -116,13 +158,51 @@ data class ModelSettingsPanel(
                         .visibleIf(cb.selected)
                 }.layout(RowLayout.LABEL_ALIGNED)
 
+                // Сразу после создания панели инициализируем состояние для текущей модели
+                val initialModel = components.modelsList.find { it.displayName == components.modelsComboBox.selectedItem }
+                updateReasoningUI(initialModel, components, reasoningComboBox, labelReasoning)
+
             }.apply {
-                // Разворачиваем группу сразу после создания
                 expanded = settings.state.modelSelectionExpanded
                 addExpandedListener { isExpanded ->
                     settings.state.modelSelectionExpanded = isExpanded
                 }
             }.customize(UnscaledGapsY(bottom = 0))
+
+        }
+    }
+
+    private fun updateReasoningUI(
+        model: Model?,
+        components: ModelSettingsPanel,
+        cb: ComboBox<String>? = null,
+        lbl: JLabel? = null,
+    ) {
+        // В идеале ссылки на row и cb нужно сохранить в компонентах или найти в панели
+        if (model == null) return
+
+        val supports = model.supportsReasoning
+
+        // 1. Управляем видимостью всей строки
+        if (supports && cb != null) {
+            // 2. Обновляем список доступных опций в комбобоксе
+            cb.removeAllItems()
+            model.reasoningOptions.forEach { cb.addItem(it) }
+
+            // 3. Устанавливаем дефолтное значение, если в настройках еще пусто
+            if (components.endpointSettings.reasoning.isEmpty()) {
+                cb.selectedItem = model.defaultReasoning ?: model.reasoningOptions.firstOrNull()
+            } else {
+                cb.selectedItem = components.endpointSettings.reasoning
+            }
+
+            // 4. Блокируем, если выбора нет
+            cb.isEnabled = model.reasoningOptions.size > 1
+            cb.isVisible = true
+            lbl?.isVisible = true
+        } else {
+            cb?.isVisible = false
+            lbl?.isVisible = false
         }
     }
 
@@ -264,7 +344,7 @@ data class ModelSettingsPanel(
         val savedKey = uiSettings.selectedModelKey
         val selected = models.find { it.key == savedKey }
             ?: models.first()
-
+        components.selectedModel = selected
         components.modelsComboBox.selectedItem = selected.displayName
     }
 }

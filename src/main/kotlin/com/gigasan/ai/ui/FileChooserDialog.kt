@@ -4,6 +4,8 @@ import com.gigasan.ai.config.storage.Model
 import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.config.storage.InstructionsService
+import com.gigasan.ai.config.storage.ModelCache
+import com.gigasan.ai.config.storage.ModelCacheService
 import com.intellij.icons.AllIcons
 import com.intellij.lang.Language
 import com.intellij.openapi.diagnostic.Logger
@@ -63,6 +65,8 @@ class FileChooserDialog(
     private val pluginSettingsService = PluginSettingsService.instance
     private val projectSettingsService = ProjectSettingsService.getInstance(project)
 
+    private var modelCache: ModelCache =
+        ModelCacheService.instance.getSettingsFor(projectSettingsService.state.backendEndpoint)
     // model settings from ModelSettingsPanel.kt
     lateinit var msp: ModelSettingsPanel // Контейнер с компонентами для ModelSettingsPanel
 
@@ -156,7 +160,8 @@ class FileChooserDialog(
         msp = ModelSettingsPanel(
             project,
             modelsComboBox = ComboBox<String>(),
-            modelsList = mutableListOf<Model>(),
+            modelsList = modelCache.models.toMutableList(),
+            selectedModel = null,
             isLoading = false,
             endpointSettings = pluginSettingsService.getSettingsFor(projectSettingsService.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
             selectedEndpoint = projectSettingsService.state.backendEndpoint,

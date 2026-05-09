@@ -28,12 +28,12 @@ data class ChatContext(
     val system: String,
     val messages: List<ChatMessage>,
     val temperature: Float = 0.666f,
-    val maxTokens: Int,
+    val maxTokens: Long,
     val keep_alive: Int,
     val metadata: Map<String, String> = emptyMap(),
-    val contextLen: Int,
+    val contextLen: Long,
     val stream: Boolean = false,
-    val think: Boolean = false,
+    val reasoning: String? = null,
 )
 
 class ChatRequestBuilder(private val project: Project) {
@@ -42,7 +42,7 @@ class ChatRequestBuilder(private val project: Project) {
     private var system: String = ""
     private val messages = mutableListOf<ChatMessage>()
     private var stream: Boolean = false
-    private var think: Boolean = false
+    private var think: String = ""
     private var memoryEnabled: Boolean = false
     private var memoryLimit: Int = 5
     private val tools = mutableListOf<Tool>()
@@ -52,7 +52,7 @@ class ChatRequestBuilder(private val project: Project) {
     }
 
     private var temperature: Float? = null
-    private var maxTokens: Int? = null
+    private var maxTokens: Long? = null
     private val metadata = mutableMapOf<String, String>()
 
     // -----------------------
@@ -89,11 +89,11 @@ class ChatRequestBuilder(private val project: Project) {
         temperature = value
     }
 
-    fun maxTokens(value: Int) = apply {
+    fun maxTokens(value: Long) = apply {
         maxTokens = value
     }
 
-    fun reasoning(reasoning: Boolean) = apply {
+    fun reasoning(reasoning: String) = apply {
         think = reasoning
     }
 
@@ -110,9 +110,10 @@ class ChatRequestBuilder(private val project: Project) {
             maxTokens = maxTokens ?: provider.buildMaxTokenLimit(),
             keep_alive = provider.buildKeepAlive(),
             metadata = metadata,
-            system = system, // "Ты агент, говорящий только на русском языке и очень молчаливый. Отвечаешь очень и очень кратко"
-            contextLen = provider.buildMaxTokenLimit(),
+            system = system,
+            contextLen = provider.buildMaxContext(),
             stream = stream,
+            reasoning = provider.buildReasoning(),
         )
     }
 }
