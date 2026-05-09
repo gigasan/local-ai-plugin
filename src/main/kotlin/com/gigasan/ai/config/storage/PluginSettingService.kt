@@ -20,6 +20,8 @@ class PluginSettingsService : PersistentStateComponent<PluginSettingsService.Sta
         var enableChat: Boolean = true,
         var enableSettingsAction: Boolean = true,
 
+        var enableDebugLog: Boolean = false,
+
         // toolbar actions
         var enableDebugFeature: Boolean = true,
         var enableTaskCompositor: Boolean = true,

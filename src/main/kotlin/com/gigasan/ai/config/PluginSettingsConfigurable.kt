@@ -241,6 +241,13 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                             setter = { value: Boolean -> projectSettingsService.state.selectEntireLines = value }
                         )
                 }
+                row("Advanced:") {
+                    checkBox("Enable debug logs")
+                        .bindSelected(
+                            getter = { pluginSettingsService.state.enableDebugLog },
+                            setter = { value: Boolean -> pluginSettingsService.state.enableDebugLog = value }
+                        )
+                }
             }.apply {
                 // Разворачиваем группу сразу после создания
                 expanded = projectSettingsService.state.promptsExpanded
