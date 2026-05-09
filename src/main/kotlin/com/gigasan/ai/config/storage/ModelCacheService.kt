@@ -75,7 +75,6 @@ data class ModelCache(
     @Attribute("timestamp") var timestamp: Long = 0
 )
 
-
 enum class Source { LM_STUDIO, OLLAMA, OPEN_AI }
 
 @Tag("Model")
@@ -88,6 +87,13 @@ data class Model(
     @Attribute("quant") var quant: String = "",
     @Attribute("params") var params: String = "",
     @Attribute("arc") var arc: String = "",
-    @Attribute("maxContext") var maxContext: Int = 0,
-    @Attribute("tools") var tools: Boolean = false
+    @Attribute("maxContext") var maxContext: Long = 0,
+    @Attribute("tools") var tools: Boolean = false,
+
+    // reasoning Lm studio
+    var reasoningOptions: List<String> = emptyList(),
+    var defaultReasoning: String? = null,
 )
+
+val Model.supportsReasoning: Boolean
+    get() = reasoningOptions.isNotEmpty()

@@ -39,7 +39,10 @@ class ChatToolWindowFactory : ToolWindowFactory {
             override fun actionPerformed(e: AnActionEvent) {
                 val project = e.project ?: return
                 ApplicationManager.getApplication().invokeLater {
-                    ShowSettingsUtil.getInstance().showSettingsDialog(project, "LocalAI.Settings")
+                    ShowSettingsUtil.getInstance().showSettingsDialog(
+                        project,
+                        com.gigasan.ai.config.PluginSettingsConfigurable::class.java
+                    )
                 }
             }
         }

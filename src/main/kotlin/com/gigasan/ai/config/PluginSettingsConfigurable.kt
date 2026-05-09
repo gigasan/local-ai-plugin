@@ -27,7 +27,6 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
     private val pluginSettingsService = PluginSettingsService.instance
     private val projectSettingsService = ProjectSettingsService.getInstance(project)
 
-    //var endpointSettings: EndpointSettings
     private var modelCache: ModelCache =
         ModelCacheService.instance.getSettingsFor(projectSettingsService.state.backendEndpoint)
 
@@ -55,13 +54,15 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
     override fun createPanel(): DialogPanel {  // ← Kotlin UI DSL Version 2
         lateinit var apiKeyField: Cell<JBPasswordField> // Ссылка на ячейку с полем
 
+        val selectedEndpoint = projectSettingsService.state.backendEndpoint
         msp = ModelSettingsPanel(
             project,
             modelsComboBox = ComboBox<String>(),
-            modelsList = mutableListOf<Model>(),
+            modelsList = modelCache.models.toMutableList(),
+            selectedModel = null,
             isLoading = false,
             endpointSettings = pluginSettingsService.getSettingsFor(projectSettingsService.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
-            selectedEndpoint = projectSettingsService.state.backendEndpoint,
+            selectedEndpoint = selectedEndpoint,
         )
         lateinit var modelSettingsPanel: DialogPanel
         fun refreshUIFromModel(mcc: ModelSettingsPanel) {
