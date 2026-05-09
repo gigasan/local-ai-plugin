@@ -11,6 +11,7 @@ import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.config.storage.supportsReasoning
 import com.gigasan.ai.core.FileLogger
+import com.gigasan.ai.runtime.AIMetrics
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -58,13 +59,59 @@ data class ModelSettingsPanel(
                         .resizableColumn()
                         .align(AlignX.FILL)
                         .applyToComponent {
-                            // Добавляем слушатель изменений
+                            renderer = object : com.intellij.ui.SimpleListCellRenderer<String>() {
+                                override fun customize(
+                                    list: javax.swing.JList<out String>,
+                                    value: String?,
+                                    index: Int,
+                                    selected: Boolean,
+                                    hasFocus: Boolean
+                                ) {
+                                    // Устанавливаем основной текст элемента
+                                    text = value ?: ""
+
+                                    // index >= 0 означает, что мы рисуем элемент в выпадающем списке
+                                    // index == -1 означает отрисовку выбранного элемента в самом захлопнутом комбобоксе
+                                    if (index >= 0 && value != null) {
+                                        val modelInfo = components.modelsList.find { it.displayName == value }
+
+                                        if (modelInfo != null) {
+                                            val sizeHuman = com.intellij.openapi.util.text.StringUtil.formatFileSize(modelInfo.size)
+                                            val ctxHuman = AIMetrics.formatSize(modelInfo.maxContext)
+                                            val reasoningStatus = if (modelInfo.reasoningOptions.isNullOrEmpty() || modelInfo.defaultReasoning == null) {
+                                                "<i color='gray'>not supported</i>"
+                                            } else {
+                                                modelInfo.reasoningOptions.joinToString(", ", "[", "]:") + modelInfo.defaultReasoning
+                                            }
+                                            // Используем HTML для многострочности и форматирования
+                                            toolTipText = """
+                                            <html>
+                                                <b>Model parameters:</b><br/>
+                                                • Name: ${modelInfo.displayName} <br/>
+                                                • Max context: $ctxHuman <br/>
+                                                • Quant: ${modelInfo.quant} <br/>
+                                                • Params: ${modelInfo.params} <br/>
+                                                • Size: $sizeHuman <br/>
+                                                ------------------<br/>
+                                                • Reasoning: $reasoningStatus <br/>
+                                                • Tools: ${modelInfo.tools} <br/>
+                                                • Format: ${modelInfo.format} <br/>
+                                                • Arc: ${modelInfo.arc} <br/>
+                                                • Source: ${modelInfo.source} <br/>
+                                                • Key: ${modelInfo.key} <br/>
+                                            </html>
+                                        """.trimIndent()
+                                        }
+                                    } else {
+                                        // Очищаем подсказку для выбранного элемента, если она там не нужна
+                                        toolTipText = null
+                                    }
+                                }
+                            }
                             addActionListener {
                                 val selectedName = selectedItem as? String
                                 val model = components.modelsList.find { it.displayName == selectedName }
                                 components.selectedModel = model
-
-                                // ВЫЗОВ ОБНОВЛЕНИЯ (см. далее)
                                 updateReasoningUI(model, components, reasoningComboBox, labelReasoning)
                             }
                         }
