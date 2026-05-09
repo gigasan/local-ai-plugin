@@ -1,5 +1,6 @@
 package com.gigasan.ai.core
 
+import com.gigasan.ai.config.storage.PluginSettingsService
 import com.intellij.openapi.diagnostic.Logger
 import java.io.File
 import java.time.LocalDateTime
@@ -11,11 +12,13 @@ interface JsonFileLogger {
     // Настройки путей и формата
     private companion object {
         val timestampFormatter: DateTimeFormatter? = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS")
-        //val dir = project.basePath?:return
         private val logger = Logger.getInstance("JsonFileLogger")
     }
 
     public fun saveJson(project: Project, prefix: String, content: String, prefixIdx: Int? = null) {
+        if (!PluginSettingsService.instance.state.enableDebugLog) {
+            return
+        }
         try {
             val projectPath = project.basePath?:return
             val logsFolder = File(projectPath, "json_logs")

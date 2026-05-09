@@ -40,9 +40,6 @@ data class ModelSettingsPanel(
 
     // Дополнительно — можно добавить колбэки, если нужно
     var onModelsLoaded: ((List<Model>) -> Unit)? = null,
-
-
-
     ) {
     val logger = Logger.getInstance("ModelSettingsPanel")
 
@@ -123,7 +120,9 @@ data class ModelSettingsPanel(
                             setter = { value: Int -> components.endpointSettings.keep_alive = value }
                         )
 
-                    labelReasoning = label("Reasoning:").component
+                    labelReasoning = label("Reasoning:")
+                        .visible(false)
+                        .component
                     reasoningComboBox = comboBox(emptyList<String>())
                         .bindItem(
                             // БЕЗОПАСНАЯ ПРИВЯЗКА без toNullableProperty
@@ -132,7 +131,6 @@ data class ModelSettingsPanel(
                         )
                         .visible(false)
                         .component
-                    labelReasoning.isVisible = reasoningComboBox.isVisible
                 }
 
 
@@ -179,7 +177,12 @@ data class ModelSettingsPanel(
         lbl: JLabel? = null,
     ) {
         // В идеале ссылки на row и cb нужно сохранить в компонентах или найти в панели
-        if (model == null) return
+        if (model == null)
+        {
+            cb?.isVisible = false
+            lbl?.isVisible = false
+            return
+        }
 
         val supports = model.supportsReasoning
 
@@ -344,6 +347,7 @@ data class ModelSettingsPanel(
         val savedKey = uiSettings.selectedModelKey
         val selected = models.find { it.key == savedKey }
             ?: models.first()
+
         components.selectedModel = selected
         components.modelsComboBox.selectedItem = selected.displayName
     }
