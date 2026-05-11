@@ -1,6 +1,5 @@
 package com.gigasan.ai.ui
 
-import com.gigasan.ai.config.storage.Model
 import com.gigasan.ai.config.storage.WorkItem
 import com.gigasan.ai.config.storage.TaskSequenceService
 import com.gigasan.ai.config.storage.PluginSettingsService
@@ -10,7 +9,6 @@ import com.gigasan.ai.config.storage.ModelCache
 import com.gigasan.ai.config.storage.ModelCacheService
 import com.gigasan.ai.core.wrapCode
 import com.gigasan.ai.ui.chat.ChatPanel
-import com.gigasan.ai.ui.chat.ChatPanel.Companion.CHAT_BROWSER_KEY
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionToolbarPosition
@@ -41,12 +39,11 @@ import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.LanguageTextField
-import com.intellij.ui.layout.selected
+import com.intellij.ui.components.JBCheckBox
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.FlowLayout
 import java.awt.Font
-import javax.swing.JCheckBox
 
 
 class TaskCompositorDialog(
@@ -89,7 +86,6 @@ class TaskCompositorDialog(
         cellRenderer = MyTwoLineRenderer()
     }
 
-    val rsp = RequestSettingsPanel(instructionsService = InstructionsService.instance, cbProblem = JCheckBox())
     var msp = ModelSettingsPanel(
         project,
         modelsComboBox = ComboBox<String>(),
@@ -98,6 +94,11 @@ class TaskCompositorDialog(
         isLoading = false,
         endpointSettings = pluginSettingsService.getSettingsFor(projectSettingsService.state.backendEndpoint),       // важно: передаём ссылку на существующий объект
         selectedEndpoint = projectSettingsService.state.backendEndpoint,
+    )
+    val isp = InstructionsSettingsPanel(
+        project,
+        instructionsService = InstructionsService.instance,
+        cbProblem = null
     )
     lateinit var topPanel: DialogPanel
     lateinit var bottomPanel: DialogPanel
@@ -123,7 +124,7 @@ class TaskCompositorDialog(
 
         val rootPanel = JBPanel<JBPanel<*>>(BorderLayout())
 
-        topPanel = rsp.createRequestSettingsPanel(rsp).apply {
+        topPanel = isp.createInstructionsSettingsPanel(isp).apply {
             border = JBUI.Borders.empty(5)
             //add(JBLabel("Это верхняя панель (на всю ширину)"), BorderLayout.WEST)
             // Сюда можно добавить, например, строку поиска или фильтры
@@ -148,7 +149,7 @@ class TaskCompositorDialog(
 
         // контекстное меню
         val group = DefaultActionGroup()
-        group.add(object : AnAction("Удалить", null, AllIcons.General.Remove) {
+        group.add(object : AnAction("Delete", null, AllIcons.General.Remove) {
             override fun actionPerformed(e: AnActionEvent) {
                 val index = tasksList.selectedIndex
                 if (index != -1) (tasksList.model as DefaultListModel).remove(index)
@@ -157,7 +158,7 @@ class TaskCompositorDialog(
                 }
             }
         })
-        group.add(object : AnAction("Удалить Всё", null, AllIcons.General.Remove) {
+        group.add(object : AnAction("Delete All", null, AllIcons.General.Remove) {
             override fun actionPerformed(e: AnActionEvent) {
                 tasksModel.clear()
             }
@@ -170,7 +171,7 @@ class TaskCompositorDialog(
 
         // Создаем контейнер для контента (Правая часть)
         val detailsPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
-            add(JBLabel("Выберите элемент из списка"), BorderLayout.CENTER)
+            add(JBLabel("Select an item from the list"), BorderLayout.CENTER)
         }.apply { alignmentX = Component.CENTER_ALIGNMENT }
 
         // Логика переключения
@@ -231,8 +232,8 @@ class TaskCompositorDialog(
                 override fun actionPerformed(e: AnActionEvent) {
                     // 1. Настраиваем фильтр файлов (только .txt)
                     val descriptor = FileChooserDescriptor(true, false, false, false, false, false)
-                        .withTitle("Выберите Файл")
-                        .withDescription("Файл будет загружен в список задач")
+                        .withTitle("Select File")
+                        .withDescription("The file will be uploaded to the task list")
                         //.withFileFilter { it.extension == "txt" }
 
                     // 2. Открываем диалог
@@ -242,8 +243,8 @@ class TaskCompositorDialog(
                         try {
                             // Проверяем, не считает ли IDE этот файл бинарным
                             if (file.fileType.isBinary) {
-                                logger.warn("Это бинарный файл, чтение как текст может быть некорректным")
-                                Messages.showErrorDialog(e.project, "Невозможно загрузить файл", "Загрузка")
+                                logger.warn("This is a binary file, reading it as text may be incorrect.")
+                                Messages.showErrorDialog(e.project, "Unable to upload file", "Upload")
                                 return
                             }
 
@@ -258,9 +259,9 @@ class TaskCompositorDialog(
                             val newData = WorkItem("File ${file.name}", "FileChooser", "1.0", "", "File", text)
                             (tasksList.model as DefaultListModel).addElement(newData)
 
-                            logger.info("Файл загружен: ${file.name}")
+                            logger.info("The file has been uploaded: ${file.name}")
                         } catch (ex: Exception) {
-                            Messages.showErrorDialog(e.project, "Ошибка при чтении файла: ${ex.message}", "Загрузка")
+                            Messages.showErrorDialog(e.project, "Error reading file: ${ex.message}", "Loading")
                         }
                     }
                 }
@@ -305,7 +306,7 @@ class TaskCompositorDialog(
             val descriptionField = LanguageTextField(
                 Language.findLanguageByID("TEXT"), project, selected.description, false)
                 .apply {
-                    setPlaceholder("Дополнительное (не обязательное) описание для блока задачи...")
+                    setPlaceholder("Additional (optional) description for the task block...")
                     setShowPlaceholderWhenFocused(true)
                     setCaretPosition(0)
                     addSettingsProvider { editor ->
@@ -331,7 +332,7 @@ class TaskCompositorDialog(
             val editorField = LanguageTextField(
                 Language.findLanguageByID("TEXT"), project, selected.text, false)
                 .apply {
-                    setPlaceholder("Блок кода/данных задачи...")
+                    setPlaceholder("Task code/data block...")
                     setShowPlaceholderWhenFocused(true)
                     setCaretPosition(0)
                     addSettingsProvider { editor ->
@@ -365,6 +366,17 @@ class TaskCompositorDialog(
             detailsPanel.add(innerSplitter, BorderLayout.CENTER)
 
             val btnPanel = JPanel(FlowLayout(FlowLayout.RIGHT)).apply {
+
+
+                val includeProblem = JBCheckBox("Include problem").apply {
+                    alignmentX = Component.LEFT_ALIGNMENT
+                    toolTipText = "Include a Problem from Instruction Set"
+                }
+                val wrapDataCheckBox = JBCheckBox("Wrap DATA block").apply {
+                    alignmentX = Component.LEFT_ALIGNMENT
+                    toolTipText = "Wrap every code block into DATA ... DATA END"
+                }
+
                 val estimateSizeBtn = JButton("Estimate the size").apply {
                     addActionListener {
                         var sum = 0
@@ -391,18 +403,22 @@ class TaskCompositorDialog(
                         //Messages.showInfoMessage("sending to AI $sum bytes in $num steps", title)
 
                         val problem = StringBuilder()
-                        if (rsp.cbProblem.isSelected) {
-                            problem.append(rsp.instructionsService.state.selectedProblem).append("\n")
+                        // cbProblem?.selected ?: JBCheckBox().apply { isSelected = true }.selected
+                        if (isp.cbProblem?.isSelected ?: JBCheckBox().apply { isSelected = true }.isSelected) {
+                            problem.append(isp.instructionsService.state.selectedProblem).append("\n")
                         }
                         problem.append(text.toString()).append("\n")
 
                         ChatPanel.instance?.sendInstructionQuestionTask(
-                            rsp.instructionsService.state.selectedInstruction,
+                            isp.instructionsService.state.selectedInstruction,
                             problem.toString()
                             )
                     }
 
                 }
+
+                add(includeProblem)
+                add(wrapDataCheckBox)
                 add(estimateSizeBtn)
                 add(sendTaskBtn)
                 background = UIUtil.getPanelBackground()
@@ -432,10 +448,9 @@ class TaskCompositorDialog(
             taskSequenceService.state.items.add(tasksList.model.getElementAt(i))
         }
 
-        bottomPanel.apply()
-
         topPanel.apply()
-
+        bottomPanel.apply()
+        projectSettingsService.notifyChange(project)
         super.doOKAction()
     }
 

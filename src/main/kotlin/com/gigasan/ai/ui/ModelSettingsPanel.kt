@@ -11,17 +11,17 @@ import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.config.storage.supportsReasoning
 import com.gigasan.ai.core.FileLogger
+import com.gigasan.ai.core.createModelListRenderer
 import com.gigasan.ai.runtime.AIMetrics
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
-import com.jetbrains.rd.swing.visibleProperty
 import com.jetbrains.rd.util.URI
-import java.awt.Label
 import java.net.HttpURLConnection
 import javax.swing.JLabel
 import javax.swing.SwingUtilities
@@ -29,7 +29,6 @@ import javax.swing.SwingUtilities
 data class ModelSettingsPanel(
     // Ссылки на внешние объекты (чтобы можно было обновлять UI из асинхронного кода)
     val project: Project,
-
     // Основные изменяемые компоненты
     val modelsComboBox: ComboBox<String>,
     val modelsList: MutableList<Model> = mutableListOf(),
@@ -38,94 +37,44 @@ data class ModelSettingsPanel(
     var isLoading: Boolean = false,
     var endpointSettings: EndpointSettings,
     var selectedEndpoint: BackendEndpoint,
-
-    // Дополнительно — можно добавить колбэки, если нужно
-    var onModelsLoaded: ((List<Model>) -> Unit)? = null,
-    ) {
+) {
     val logger = Logger.getInstance("ModelSettingsPanel")
 
-    //var reasoningRow: Row? = null
-    lateinit var reasoningComboBox: ComboBox<String>
     lateinit var labelReasoning: JLabel
+    lateinit var reasoningComboBox: ComboBox<String>
+
+    lateinit var keepAliveLabel: JLabel
+    lateinit var keepAliveTextField: JBTextField
 
     fun createModelSettingsPanel(components: ModelSettingsPanel): DialogPanel {
         val project = components.project
         val settings = ProjectSettingsService.getInstance(project)
         selectedModel = components.modelsList.find { it.displayName == components.endpointSettings.selectedModelName }
-        return panel { // Создаем новую изолированную панель
+        var panelExpanded = settings.state.modelSelectionExpanded
+        return panel {
             collapsibleGroup("Model Settings (Endpoint Dependent)") {
                 row("Model:") {
                     cell(components.modelsComboBox) // Используем конкретный экземпляр
                         .resizableColumn()
                         .align(AlignX.FILL)
                         .applyToComponent {
-                            renderer = object : com.intellij.ui.SimpleListCellRenderer<String>() {
-                                override fun customize(
-                                    list: javax.swing.JList<out String>,
-                                    value: String?,
-                                    index: Int,
-                                    selected: Boolean,
-                                    hasFocus: Boolean
-                                ) {
-                                    // Устанавливаем основной текст элемента
-                                    text = value ?: ""
 
-                                    // index >= 0 означает, что мы рисуем элемент в выпадающем списке
-                                    // index == -1 означает отрисовку выбранного элемента в самом захлопнутом комбобоксе
-                                    if (index >= 0 && value != null) {
-                                        val modelInfo = components.modelsList.find { it.displayName == value }
-
-                                        if (modelInfo != null) {
-                                            val sizeHuman = com.intellij.openapi.util.text.StringUtil.formatFileSize(modelInfo.size)
-                                            val ctxHuman = AIMetrics.formatSize(modelInfo.maxContext)
-                                            val reasoningStatus = if (modelInfo.reasoningOptions.isNullOrEmpty() || modelInfo.defaultReasoning == null) {
-                                                "<i color='gray'>not supported</i>"
-                                            } else {
-                                                modelInfo.reasoningOptions.joinToString(", ", "[", "]:") + modelInfo.defaultReasoning
-                                            }
-                                            // Используем HTML для многострочности и форматирования
-                                            toolTipText = """
-                                            <html>
-                                                <b>Model parameters:</b><br/>
-                                                • Name: ${modelInfo.displayName} <br/>
-                                                • Max context: $ctxHuman <br/>
-                                                • Quant: ${modelInfo.quant} <br/>
-                                                • Params: ${modelInfo.params} <br/>
-                                                • Size: $sizeHuman <br/>
-                                                ------------------<br/>
-                                                • Reasoning: $reasoningStatus <br/>
-                                                • Tools: ${modelInfo.tools} <br/>
-                                                • Format: ${modelInfo.format} <br/>
-                                                • Arc: ${modelInfo.arc} <br/>
-                                                • Source: ${modelInfo.source} <br/>
-                                                • Key: ${modelInfo.key} <br/>
-                                            </html>
-                                        """.trimIndent()
-                                        }
-                                    } else {
-                                        // Очищаем подсказку для выбранного элемента, если она там не нужна
-                                        toolTipText = null
-                                    }
-                                }
-                            }
+                            renderer = createModelListRenderer(components.modelsList)
                             addActionListener {
                                 val selectedName = selectedItem as? String
                                 val model = components.modelsList.find { it.displayName == selectedName }
                                 components.selectedModel = model
-                                updateReasoningUI(model, components, reasoningComboBox, labelReasoning)
+                                updateReasoningUI(model, components, labelReasoning, reasoningComboBox, panelExpanded)
+                                updateKeepAliveUI(model, components, keepAliveLabel, keepAliveTextField, panelExpanded)
                             }
                         }
                         .bindItem(
                             getter = { components.endpointSettings.selectedModelName },
                             setter = { newName ->
                                 components.endpointSettings.selectedModelName = newName.orEmpty()
-//                                val found = components.modelsList.find { it.displayName == newName }
-//                                components.selectedModel = found
-//                                found?.let { components.endpointSettings.selectedModelKey = it.key }
-                                val selectedModel = components.modelsList.find { it.displayName == newName }
-                                if (selectedModel != null) {
-                                    components.endpointSettings.selectedModelKey = selectedModel.key
-                                }
+                                val found = components.modelsList.find { it.displayName == newName }
+                                components.selectedModel = found
+                                found?.let { components.endpointSettings.selectedModelKey = it.key }
                             }
                         )
                     button("Refresh Models") {
@@ -150,7 +99,7 @@ data class ModelSettingsPanel(
                                 components.endpointSettings.maxContext = value.toLongOrNull() ?: 0L
                             }
                         )
-                        .columns(10)                    // ширина поля
+                        .columns(10)
                     label("Token limit:")
                     textField()
                         .bindText(
@@ -159,13 +108,18 @@ data class ModelSettingsPanel(
                                 components.endpointSettings.maxTokenLimit = value.toLongOrNull() ?: 0L
                             }
                         )
-                        .columns(10)                    // ширина поля
-                    label("Keep alive, min:")
-                    intTextField()
+                        .columns(10)
+
+                    keepAliveLabel = label("Keep alive, min:")
+                        .visible(false)
+                        .component
+                    keepAliveTextField = intTextField()
                         .bindIntText(
                             getter = { components.endpointSettings.keep_alive },
                             setter = { value: Int -> components.endpointSettings.keep_alive = value }
                         )
+                        .visible(false)
+                        .component
 
                     labelReasoning = label("Reasoning:")
                         .visible(false)
@@ -180,37 +134,50 @@ data class ModelSettingsPanel(
                         .component
                 }
 
-
                 row() {
+                    label("Temperature:")
+                    slider(0, 10, 1, 0) // от 0 до 10, шаг 1
+                        .bindValue(
+                            getter = {
+                                // Превращаем "0.7" в 7 для слайдера
+                                val currentTemp = components.endpointSettings.temperature
+                                (currentTemp * 10).toInt().coerceIn(0, 10)
+                            },
+                            setter = { newValue ->
+                                // Превращаем 7 от слайдера в "0.7" для модели
+                                components.endpointSettings.temperature = (newValue / 10.0f)
+                            }
+                        )
 
                     checkBox("Stream")
                         .bindSelected(
                             getter = { components.endpointSettings.stream },
                             setter = { value: Boolean -> components.endpointSettings.stream = value }
                         )
-                    val cb = checkBox("Logprobs")
-                        .bindSelected(
-                            getter = { components.endpointSettings.logprobs },
-                            setter = { value: Boolean -> components.endpointSettings.logprobs = value }
-                        )
-                    label("Top logprobs:")
-                        .visibleIf(cb.selected)
-                    intTextField()
-                        .bindIntText(
-                            getter = { components.endpointSettings.top_logprobs },
-                            setter = { value: Int -> components.endpointSettings.top_logprobs = value }
-                        )
-                        .visibleIf(cb.selected)
+//                    val cb = checkBox("Logprobs")
+//                        .bindSelected(
+//                            getter = { components.endpointSettings.logprobs },
+//                            setter = { value: Boolean -> components.endpointSettings.logprobs = value }
+//                        )
+//                    label("Top logprobs:")
+//                        .visibleIf(cb.selected)
+//                    intTextField()
+//                        .bindIntText(
+//                            getter = { components.endpointSettings.top_logprobs },
+//                            setter = { value: Int -> components.endpointSettings.top_logprobs = value }
+//                        )
+//                        .visibleIf(cb.selected)
                 }.layout(RowLayout.LABEL_ALIGNED)
 
                 // Сразу после создания панели инициализируем состояние для текущей модели
                 val initialModel = components.modelsList.find { it.displayName == components.modelsComboBox.selectedItem }
-                updateReasoningUI(initialModel, components, reasoningComboBox, labelReasoning)
-
+                updateKeepAliveUI(initialModel, components, keepAliveLabel, keepAliveTextField, panelExpanded)
+                updateReasoningUI(initialModel, components, labelReasoning, reasoningComboBox, panelExpanded)
             }.apply {
                 expanded = settings.state.modelSelectionExpanded
                 addExpandedListener { isExpanded ->
                     settings.state.modelSelectionExpanded = isExpanded
+                    panelExpanded = isExpanded
                 }
             }.customize(UnscaledGapsY(bottom = 0))
 
@@ -220,8 +187,9 @@ data class ModelSettingsPanel(
     private fun updateReasoningUI(
         model: Model?,
         components: ModelSettingsPanel,
-        cb: ComboBox<String>? = null,
         lbl: JLabel? = null,
+        cb: ComboBox<String>? = null,
+        isParentExpanded: Boolean = false
     ) {
         // В идеале ссылки на row и cb нужно сохранить в компонентах или найти в панели
         if (model == null)
@@ -248,11 +216,28 @@ data class ModelSettingsPanel(
 
             // 4. Блокируем, если выбора нет
             cb.isEnabled = model.reasoningOptions.size > 1
-            cb.isVisible = true
-            lbl?.isVisible = true
+
+            cb.isVisible = isParentExpanded
+            lbl?.isVisible = isParentExpanded
         } else {
             cb?.isVisible = false
             lbl?.isVisible = false
+        }
+    }
+
+    private fun updateKeepAliveUI(
+        model: Model?,
+        components: ModelSettingsPanel,
+        label: JLabel,
+        textField: JBTextField,
+        isParentExpanded: Boolean = false
+    ) {
+        if (isParentExpanded && model != null && components.selectedEndpoint == BackendEndpoint.OLLAMA_ENDPOINT) {
+            label.isVisible = true
+            textField.isVisible = true
+        } else {
+            label.isVisible = false
+            textField.isVisible = false
         }
     }
 
@@ -311,7 +296,6 @@ data class ModelSettingsPanel(
                     )
                 )
 
-                //ApplicationManager.getApplication().invokeLater {
                 SwingUtilities.invokeLater {
                     applyModelsToUI(endpointSettings, freshModels, components)
                     // ВАЖНО: Обновляем UI только если юзер всё еще на этом эндпоинте
@@ -333,7 +317,6 @@ data class ModelSettingsPanel(
             }
         }
     }
-
 
     fun fetchModels(
         project: Project,

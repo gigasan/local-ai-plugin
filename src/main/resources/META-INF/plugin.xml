@@ -30,16 +30,15 @@
                 serviceImplementation="com.gigasan.ai.config.DefaultChatConfigProvider"/>
         <applicationService serviceImplementation="com.gigasan.ai.config.storage.PluginSettingsService"/>
         <projectConfigurable
-            instance="com.gigasan.ai.config.PluginSettingsConfigurable"
-            displayName="Local AI Chat Settings"
-            id="LocalAI.Settings"/>
+                displayName="Local AI Chat Settings"
+                id="com.gigasan.ai.config.PluginSettingsConfigurable"
+                instance="com.gigasan.ai.config.PluginSettingsConfigurable"/>
         <toolWindow
             id="Local AI Chat"
             factoryClass="com.gigasan.ai.ui.chat.ChatToolWindowFactory"
             anchor="right"
             icon="/icons/chat.svg"
-            secondary="true"
-        />
+            secondary="true"/>
     </extensions>
 
     <extensions defaultExtensionNs="org.jetbrains.kotlin">

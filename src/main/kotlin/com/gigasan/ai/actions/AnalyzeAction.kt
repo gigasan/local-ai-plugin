@@ -25,7 +25,7 @@ import com.intellij.psi.PsiManager
 
 class AnalyzeAction : AnAction("Analyze Project", "Scan project and open refactor dialog", AllIcons.Actions.DependencyAnalyzer) {
     private val logger = Logger.getInstance("AnalyzeAction")
-    private val settings = PluginSettingsService()
+    private val settings = PluginSettingsService.instance
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
 

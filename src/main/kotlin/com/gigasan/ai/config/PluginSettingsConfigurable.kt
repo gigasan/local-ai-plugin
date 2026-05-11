@@ -1,6 +1,7 @@
 package com.gigasan.ai.config
 
 import com.gigasan.ai.config.storage.EndpointSettings
+import com.gigasan.ai.config.storage.InstructionsService
 import com.gigasan.ai.config.storage.Model
 import com.gigasan.ai.config.storage.ModelCache
 import com.gigasan.ai.config.storage.ModelCacheService
@@ -15,11 +16,15 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.builder.bindItem
 import com.gigasan.ai.core.JsonFileLogger
+import com.gigasan.ai.core.createTooltipRenderer
+import com.gigasan.ai.ui.InstructionsSettingsPanel
 import com.gigasan.ai.ui.ModelSettingsPanel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
 import com.intellij.util.ui.FontInfo
+import com.intellij.util.ui.JBUI
 import okhttp3.internal.toLongOrDefault
+import javax.swing.JCheckBox
 
 class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Local AI Settings"), JsonFileLogger {
     private val logger = Logger.getInstance("PluginSettingsConfigurable")
@@ -44,14 +49,19 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
     private lateinit var chatCombo: ComboBox<String>
     private lateinit var modelsCombo: ComboBox<String>
 
+
+    private val chatInstructionsModel = MutableCollectionComboBoxModel<String>()
+    private lateinit var chatInstructionCombo: ComboBox<String>
+    private val instructionsService = InstructionsService.instance
+
     lateinit var myPanel: DialogPanel // Основная панель
     lateinit var msp: ModelSettingsPanel // Контейнер с компонентами для ModelSettingsPanel
-
-    //lateinit var modelCombo: ComboBox<String>
+    lateinit var isp: InstructionsSettingsPanel // Контейнер с компонентами для InstructionsSettingsPanel
 
     override fun getDisplayName(): String = "Local AI Settings"
 
     override fun createPanel(): DialogPanel {  // ← Kotlin UI DSL Version 2
+        logger.info("createPanel enter")
         lateinit var apiKeyField: Cell<JBPasswordField> // Ссылка на ячейку с полем
 
         val selectedEndpoint = projectSettingsService.state.backendEndpoint
@@ -65,6 +75,9 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
             selectedEndpoint = selectedEndpoint,
         )
         lateinit var modelSettingsPanel: DialogPanel
+        lateinit var instructionsSettingsPanel: DialogPanel
+
+
         fun refreshUIFromModel(mcc: ModelSettingsPanel) {
             modelSettingsPanel.reset()
         }
@@ -72,17 +85,35 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
         // Передаем this и контейнер компонентов
         modelSettingsPanel = msp.createModelSettingsPanel(msp)
 
+        isp = InstructionsSettingsPanel(
+            project,
+            instructionsService = InstructionsService.instance,
+            title = "Instruction Set (Project Dependent)",
+            cbProblem = null
+        )
 
-        logger.info("createPanel enter")
+        instructionsSettingsPanel = isp.createInstructionsSettingsPanel(isp).apply {
+            border = JBUI.Borders.empty(5)
+        }
 
         // После создания backendModel и до collapsibleGroup
         updateDependentCombos(projectSettingsService.state.backendEndpoint, msp.endpointSettings, modelCache)
+        updateInstruction(instructionsService)
 
         myPanel = panel {
-            // Регистрируем вашу внешнюю панель в жизненном цикле этой DSL панели
-            onIsModified { modelSettingsPanel.isModified() }
-            onApply { modelSettingsPanel.apply() }
-            onReset { modelSettingsPanel.reset() }
+            // Регистрируем внешнюю панель в жизненном цикле этой DSL панели
+            onIsModified {
+                modelSettingsPanel.isModified()
+                instructionsSettingsPanel.isModified()
+            }
+            onApply {
+                modelSettingsPanel.apply()
+                instructionsSettingsPanel.apply()
+            }
+            onReset {
+                modelSettingsPanel.reset()
+                instructionsSettingsPanel.reset()
+            }
 
             collapsibleGroup("Endpoint Connection Settings (Global)") {
                 row("Backend:") {
@@ -137,7 +168,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                             getter = { msp.endpointSettings.baseUrl },
                             setter = { msp.endpointSettings.baseUrl = it.orEmpty() }
                         )
-                        .component   // ← ЭТО САМОЕ ВАЖНОЕ! Здесь мы берём настоящий ComboBox
+                        .component
                 }
 
                 row("Models:") {
@@ -153,7 +184,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                                 //logger.info("SET uiSettings.modelListEndpointUrl=$modelUrl")
                             }
                         )
-                        .component   // ← ЭТО САМОЕ ВАЖНОЕ! Здесь мы берём настоящий ComboBox
+                        .component
                     label("Cache TTL, seconds:")
                     textField()
                         .bindText(
@@ -174,47 +205,23 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                                 msp.endpointSettings.chatEndpointUrl = chatUrl.orEmpty()
                             }
                         )
-                        .component   // ← ЭТО САМОЕ ВАЖНОЕ! Здесь мы берём настоящий ComboBox
+                        .component
                 }
 
-
-//                row("Cache TTL:") {
-//                    label("Model list cache TTL (Time To Live), seconds:")
-//                    textField()
-//                        .bindText(
-//                            getter = { ModelCacheService.instance.state.ttlSec.toString() },
-//                            setter = { text: String -> ModelCacheService.instance.state.ttlSec = text.toLongOrDefault(5) }
-//                        )
-//                }
             }.apply {
-                // Разворачиваем группу сразу после создания
                 expanded = projectSettingsService.state.connectionExpanded
                 addExpandedListener { isExpanded ->
                     projectSettingsService.state.connectionExpanded = isExpanded
                 }
             }
 
-            // Endpoint Settings
+            // Model Settings
             row { cell(modelSettingsPanel).align(AlignX.FILL) }.customize(UnscaledGapsY(top = 20, bottom = 20))
 
-            collapsibleGroup("Chat Settings (Project Dependent)") {
-                row("System prompt:") {
-                    textField()
-                        .resizableColumn().align(AlignX.FILL)
-                        .bindText(
-                            getter = { projectSettingsService.state.chatSystemPrompt },
-                            setter = { text -> projectSettingsService.state.chatSystemPrompt = text }
-                        )
-                }
-            }.apply {
-                // Разворачиваем группу сразу после создания
-                expanded = projectSettingsService.state.chatExpanded
-                addExpandedListener { isExpanded ->
-                    projectSettingsService.state.chatExpanded = isExpanded
-                }
-            }
+            // Instruction Set
+            row { cell(instructionsSettingsPanel).align(AlignX.FILL) }.customize(UnscaledGapsY(top = 20, bottom = 20))
 
-            collapsibleGroup("") {
+            collapsibleGroup("Task Compositor Settings (Project Dependent)") {
                 val intellijFonts = FontInfo.getAll(false).map { it.font.family }.toTypedArray()
                 // Только моноширинные шрифты (для кода)
                 val monoFonts = FontInfo.getAll(true).map { it.font.family }.toTypedArray()
@@ -241,7 +248,45 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                             setter = { value: Boolean -> projectSettingsService.state.selectEntireLines = value }
                         )
                 }
-                row("Advanced:") {
+            }.apply {
+                // Разворачиваем группу сразу после создания
+                expanded = projectSettingsService.state.taskCompositorExpanded
+                addExpandedListener { isExpanded ->
+                    projectSettingsService.state.taskCompositorExpanded = isExpanded
+                }
+            }
+
+            collapsibleGroup("Chat Settings (Project Dependent)") {
+                row("Instruction:") {
+                    chatInstructionCombo = comboBox(chatInstructionsModel)
+                        .comment("General rules, role, restrictions")
+                        .applyToComponent {
+                            isEditable = false
+                            setRenderer(createTooltipRenderer())
+                        }
+                        .resizableColumn().align(AlignX.FILL)
+                        .bindItem(
+                            getter = {
+                                projectSettingsService.state.chatSystemPrompt
+                            },
+                            setter = { chatInstruction ->
+                                projectSettingsService.state.chatSystemPrompt = chatInstruction.orEmpty()
+                            }
+                        )
+                        .component
+
+                }
+            }.apply {
+                // Разворачиваем группу сразу после создания
+                expanded = projectSettingsService.state.chatExpanded
+                addExpandedListener { isExpanded ->
+                    projectSettingsService.state.chatExpanded = isExpanded
+                }
+            }
+
+
+            collapsibleGroup("Advanced:") {
+                row("") {
                     checkBox("Enable debug logs")
                         .bindSelected(
                             getter = { pluginSettingsService.state.enableDebugLog },
@@ -250,13 +295,11 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                 }
             }.apply {
                 // Разворачиваем группу сразу после создания
-                expanded = projectSettingsService.state.promptsExpanded
+                expanded = projectSettingsService.state.advancedExpanded
                 addExpandedListener { isExpanded ->
-                    projectSettingsService.state.promptsExpanded = isExpanded
+                    projectSettingsService.state.advancedExpanded = isExpanded
                 }
             }
-
-
 
             // Запускаем загрузку моделей сразу при создании панели
             msp.loadModelsAsync(project, projectSettingsService.state.backendEndpoint, msp)
@@ -278,6 +321,17 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
         return myPanel
     }
 
+
+    private fun updateInstruction(instructionsService: InstructionsService) {
+        // chatInstruction
+        val newInstructions = instructionsService.state.instructions
+        chatInstructionsModel.update(newInstructions)
+        val chatInstructonToSelect = newInstructions.firstOrNull { it == instructionsService.state.selectedInstruction }
+        instructionsService.state.selectedInstruction = chatInstructonToSelect?:""
+        if (::chatInstructionCombo.isInitialized) {
+            chatInstructionCombo.selectedItem = chatInstructonToSelect
+        }
+    }
 
     private fun updateDependentCombos(endpoint: BackendEndpoint, endpointSettings: EndpointSettings, modelCache: ModelCache) {
 

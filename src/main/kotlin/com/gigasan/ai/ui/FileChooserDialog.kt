@@ -341,26 +341,26 @@ class FileChooserDialog(
 
             val prevStepBtn = JButton("Prev step").apply {
                 addActionListener {
-                    val state = instructionsService.state
-                    if (state.stepId >= 1) {
-                        state.stepId --
-                        sliderSteps.value = state.stepId
-                        sliderSteps.maximum = state.stepIdMax - 1
-                        instructionsService.settingsModified()
-                        previewEditor.text = state.stepsList[state.stepId]?:""
-                    }
+//                    val state = instructionsService.state
+//                    if (state.stepId >= 1) {
+//                        state.stepId --
+//                        sliderSteps.value = state.stepId
+//                        sliderSteps.maximum = state.stepIdMax - 1
+//                        instructionsService.settingsModified()
+//                        previewEditor.text = state.stepsList[state.stepId]?:""
+//                    }
                 }
             }
 
             val resetStepsBtn = JButton("Reset steps").apply {
                 addActionListener {
                     val state = instructionsService.state
-                    state.stepsList.fill(null)
-                    state.stepId = 0
-                    sliderSteps.value = state.stepId
-                    sliderSteps.maximum = state.stepIdMax - 1
-                    instructionsService.settingsModified()
-                    previewEditor.text = state.stepsList[state.stepId]?:""
+//                    state.stepsList.fill(null)
+//                    state.stepId = 0
+//                    sliderSteps.value = state.stepId
+//                    sliderSteps.maximum = state.stepIdMax - 1
+//                    instructionsService.settingsModified()
+//                    previewEditor.text = state.stepsList[state.stepId]?:""
                 }
             }
 
@@ -368,18 +368,18 @@ class FileChooserDialog(
                 addActionListener {
                     val state = instructionsService.state
 
-                    if (state.stepsList.size < state.stepIdMax) {
-                        //state.stepsList = MutableList(state.stepIdMax)
-                    }
-
-                    if (state.stepId < state.stepIdMax - 1 && !state.stepsList[state.stepId+1].isNullOrBlank())
-                    {
-                        state.stepId ++
-                        sliderSteps.value = state.stepId
-                        sliderSteps.maximum = state.stepIdMax - 1
-                        instructionsService.settingsModified()
-                        previewEditor.text = state.stepsList[state.stepId]?:""
-                    }
+//                    if (state.stepsList.size < state.stepIdMax) {
+//                        //state.stepsList = MutableList(state.stepIdMax)
+//                    }
+//
+//                    if (state.stepId < state.stepIdMax - 1 && !state.stepsList[state.stepId+1].isNullOrBlank())
+//                    {
+//                        state.stepId ++
+//                        sliderSteps.value = state.stepId
+//                        sliderSteps.maximum = state.stepIdMax - 1
+//                        instructionsService.settingsModified()
+//                        previewEditor.text = state.stepsList[state.stepId]?:""
+//                    }
                 }
             }
 
@@ -388,28 +388,28 @@ class FileChooserDialog(
                     val state = instructionsService.state
                     val title = "Добавить Новый Шаг"
 
-                    if (state.stepId == state.stepIdMax) {
-                        Messages.showErrorDialog("достигнут лимит ${state.stepId} steps", title)
-                        return@addActionListener
-                    }
-
-                    val msg = "Описание действия:"
-                    val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
-
-                    if (state.stepsList.size < state.stepIdMax) {
-                        //state.stepsList = arrayOfNulls(state.stepIdMax)
-                    }
-
-                    logger.info("result=$result stepId=${state.stepId} stepIdMax=${state.stepIdMax} stepList=${state.stepsList.size}")
-                    if (!result.isNullOrBlank() && state.stepId < state.stepIdMax) {
-                        state.stepsList[state.stepId] = result
-                        state.stepId++
-                        //state.stepsList = state.stepsList.copyOf()
-                        instructionsService.settingsModified()
-                        sliderSteps.value = state.stepId
-                        sliderSteps.maximum = state.stepIdMax - 1
-                        logger.info("updated stepId=${state.stepId} stepList=${state.stepsList}  value $result")
-                    }
+//                    if (state.stepId == state.stepIdMax) {
+//                        Messages.showErrorDialog("достигнут лимит ${state.stepId} steps", title)
+//                        return@addActionListener
+//                    }
+//
+//                    val msg = "Описание действия:"
+//                    val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
+//
+//                    if (state.stepsList.size < state.stepIdMax) {
+//                        //state.stepsList = arrayOfNulls(state.stepIdMax)
+//                    }
+//
+//                    logger.info("result=$result stepId=${state.stepId} stepIdMax=${state.stepIdMax} stepList=${state.stepsList.size}")
+//                    if (!result.isNullOrBlank() && state.stepId < state.stepIdMax) {
+//                        state.stepsList[state.stepId] = result
+//                        state.stepId++
+//                        //state.stepsList = state.stepsList.copyOf()
+//                        instructionsService.settingsModified()
+//                        sliderSteps.value = state.stepId
+//                        sliderSteps.maximum = state.stepIdMax - 1
+//                        logger.info("updated stepId=${state.stepId} stepList=${state.stepsList}  value $result")
+//                    }
                 }
             }
 
@@ -418,25 +418,25 @@ class FileChooserDialog(
                     val state = instructionsService.state
                     val title = "Добавить Новый Шаг"
 
-                    if (state.stepId == state.stepIdMax) {
-                        Messages.showErrorDialog("достигнут лимит ${state.stepId} steps", title)
-                        return@addActionListener
-                    }
-
-                    val msg = "Данные:"
-                    val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
-                    if (!result.isNullOrBlank()) {
-
-                        if (state.stepsList.size < state.stepIdMax) {
-                            //state.stepsList = arrayOfNulls(state.stepIdMax)
-                        }
-
-                        state.stepsList[state.stepId] = result
-                        state.stepId++
-                        instructionsService.settingsModified()
-                        sliderSteps.value = state.stepId
-                        sliderSteps.maximum = state.stepIdMax - 1
-                    }
+//                    if (state.stepId == state.stepIdMax) {
+//                        Messages.showErrorDialog("достигнут лимит ${state.stepId} steps", title)
+//                        return@addActionListener
+//                    }
+//
+//                    val msg = "Данные:"
+//                    val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
+//                    if (!result.isNullOrBlank()) {
+//
+//                        if (state.stepsList.size < state.stepIdMax) {
+//                            //state.stepsList = arrayOfNulls(state.stepIdMax)
+//                        }
+//
+//                        state.stepsList[state.stepId] = result
+//                        state.stepId++
+//                        instructionsService.settingsModified()
+//                        sliderSteps.value = state.stepId
+//                        sliderSteps.maximum = state.stepIdMax - 1
+//                    }
                 }
             }
 
@@ -444,13 +444,13 @@ class FileChooserDialog(
                 addActionListener {
                     var sum = 0
                     var num = 0
-                    instructionsService.state.stepsList.forEach { it ->
-                        if (!it.isNullOrBlank())
-                        {
-                            num += 1
-                            sum += it.length
-                        }
-                    }
+//                    instructionsService.state.stepsList.forEach { it ->
+//                        if (!it.isNullOrBlank())
+//                        {
+//                            num += 1
+//                            sum += it.length
+//                        }
+//                    }
                     Messages.showInfoMessage("estimated size is $sum bytes in $num steps", title)
                 }
             }
@@ -465,28 +465,28 @@ class FileChooserDialog(
             collapsibleGroup("Request Features") {
                 row {
                     label("Steps:")
-                    sliderSteps = slider(0, instructionsService.state.stepIdMax-1, 0, 1)  // min, max, minorTickSpacing, majorTickSpacing
-                        .bindValue(instructionsService.state::stepId)
-                        .onChanged {
-                            instructionsService.state
-                            previewEditor.text = instructionsService.state.stepId.toString()
-                        }
-
-                        .apply {
-                            val sliderComp = component   // это JBSlider
-
-                            sliderComp.snapToTicks = true           // ← главное!
-                            sliderComp.paintTicks = true            // показывать деления
-                            sliderComp.paintLabels = true           // показывать цифры (по major ticks)
-
-                            // Дополнительно можно настроить шаг делений
-                            sliderComp.minorTickSpacing = 1
-                            sliderComp.majorTickSpacing = 2         // цифры будут каждые 2
-                        }
-                        .component
-                    sliderSteps.addChangeListener {
-                       // stepIdField.text = sliderSteps.value.toString()
-                    }
+//                    sliderSteps = slider(0, instructionsService.state.stepIdMax-1, 0, 1)  // min, max, minorTickSpacing, majorTickSpacing
+//                        .bindValue(instructionsService.state::stepId)
+//                        .onChanged {
+//                            instructionsService.state
+//                            previewEditor.text = instructionsService.state.stepId.toString()
+//                        }
+//
+//                        .apply {
+//                            val sliderComp = component   // это JBSlider
+//
+//                            sliderComp.snapToTicks = true           // ← главное!
+//                            sliderComp.paintTicks = true            // показывать деления
+//                            sliderComp.paintLabels = true           // показывать цифры (по major ticks)
+//
+//                            // Дополнительно можно настроить шаг делений
+//                            sliderComp.minorTickSpacing = 1
+//                            sliderComp.majorTickSpacing = 2         // цифры будут каждые 2
+//                        }
+//                        .component
+//                    sliderSteps.addChangeListener {
+//                       // stepIdField.text = sliderSteps.value.toString()
+//                    }
 
                     //.bindValue(::yourProperty)
                     // или .bindIntValue если нужно

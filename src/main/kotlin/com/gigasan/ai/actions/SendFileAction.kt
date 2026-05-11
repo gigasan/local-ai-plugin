@@ -13,7 +13,7 @@ import com.intellij.openapi.vfs.VirtualFile
 
 class SendFileAction : AnAction("FileChooserDialog", "Open FileChooserDialog", AllIcons.FileTypes.Text) {
     private val logger = Logger.getInstance("SendFileAction")
-    private val settings = PluginSettingsService()
+    private val settings = PluginSettingsService.instance
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return

@@ -17,7 +17,7 @@ import com.gigasan.ai.config.storage.TaskSequenceService
 
 class EnqueueAction : AnAction("Enqueue the Task Local AI Model", "Send selected text into AI task", AllIcons.Actions.AddToDictionary) {
     private val logger = Logger.getInstance("EnqueueAction")
-    private val settings = PluginSettingsService()
+    private val settings = PluginSettingsService.instance
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return

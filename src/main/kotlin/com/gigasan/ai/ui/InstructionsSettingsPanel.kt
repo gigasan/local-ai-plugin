@@ -9,29 +9,31 @@ import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
 import com.intellij.util.ui.JBUI
-import java.awt.Component
 import java.awt.Dimension
 import javax.swing.*
 import kotlin.text.trim
 import com.gigasan.ai.config.storage.InstructionsService
+import com.gigasan.ai.core.createTooltipRenderer
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.dsl.gridLayout.UnscaledGaps
 import com.intellij.ui.layout.selected
-import java.io.File
 import com.intellij.openapi.fileChooser.FileChooserFactory
 import com.intellij.openapi.fileChooser.FileSaverDescriptor
-import com.intellij.openapi.fileChooser.FileSaverDialog
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.io.FileUtilRt   // если нужно
+import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.ui.components.JBCheckBox
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTextArea
 
-data class RequestSettingsPanel(
-    //var project: Project,
+data class InstructionsSettingsPanel(
+    var project: Project,
     var instructionsService: InstructionsService,
-    var cbProblem: JCheckBox
+    var title: String = "Instruction Set",
+    var cbProblem: JCheckBox? = null,
 ) {
-    val logger = Logger.getInstance("RequestSettingsPanel")
+    val logger = Logger.getInstance("InstructionsSettingsPanel")
 
-    fun createRequestSettingsPanel(components: RequestSettingsPanel): DialogPanel {
+    fun createInstructionsSettingsPanel(components: InstructionsSettingsPanel): DialogPanel {
 
         val instructionsModel = DefaultComboBoxModel(instructionsService.state.instructions.toTypedArray())
         val problemsModel = DefaultComboBoxModel(instructionsService.state.problems.toTypedArray())
@@ -52,15 +54,13 @@ data class RequestSettingsPanel(
 
         val resultPanel = panel {
 
-            collapsibleGroup("Directive Compound") {
+            collapsibleGroup(title) {
 
                 row {
-                    val cbInstruction = checkBox("Instruction:")
-                        .bindSelected(components.instructionsService.state::enabledInstruction)
-                        .comment("Общие правила, роль, ограничения")
+                    label("Instruction:")
+                        .comment("General rules, role, restrictions")
 
                     comboBox(instructionsModel)
-                        .enabledIf(cbInstruction.selected)
                         .align(AlignX.FILL)
                         .resizableColumn()
                         .applyToComponent {
@@ -73,23 +73,28 @@ data class RequestSettingsPanel(
                         )
 
                     // Кнопки управления Instruction
-                    actionButton(AllIcons.General.Add) { handleAdd(instructionsModel, "Задайте общие правила, роль, ограничения... :", "Добавление инструкции") { saveSystems() } }
-                    actionButton(AllIcons.Actions.Edit) { handleEdit(instructionsModel, "Измените инструкцию:", "Редактирование") { saveSystems() } }
-                    actionButton(AllIcons.General.Remove) { handleDelete(instructionsModel, "Удалить инструкцию?") { saveSystems() } }
+                    actionButton(AllIcons.General.Add, "Adding instructions") { handleAdd(instructionsModel, "Set general rules, role, restrictions... :") { saveSystems() } }
+                    actionButton(AllIcons.Actions.Edit, "Editing") { handleEdit(instructionsModel, "Change the instructions:") { saveSystems() } }
+                    actionButton(AllIcons.General.Remove, "Removing") { handleDelete(instructionsModel, "Delete the instruction?") { saveSystems() } }
 
                     // === Новые кнопки ===
-                    actionButton(AllIcons.Actions.MenuSaveall) { exportToXml(instructionsModel, "instructions") }
-                    actionButton(AllIcons.Actions.MenuOpen) { importFromXml(instructionsModel, "instructions") { saveSystems() } }
+                    actionButton(AllIcons.Actions.MenuSaveall, "Export") { exportToXml(instructionsModel, "instructions") }
+                    actionButton(AllIcons.Actions.MenuOpen, "Import") { importFromXml(instructionsModel, "instructions") { saveSystems() } }
                 }
 
                 row {
-                    cbProblem = checkBox("Problem:")
-                        .bindSelected(components.instructionsService.state::enabledProblem)
-                        .comment("Что нужно сделать прямо сейчас")
-                        .component
+                    if (cbProblem != null) {
+                        cbProblem = checkBox("Problem:")
+                            .bindSelected(components.instructionsService.state::enabledProblem)
+                            .comment("What needs to be done right now")
+                            .component
+                    } else {
+                        label("Problem:")
+                            .comment("What needs to be done right now")
+                    }
 
                     comboBox(problemsModel)
-                        .enabledIf(cbProblem.selected)
+                        .enabledIf(cbProblem?.selected ?: JBCheckBox().apply { isSelected = true }.selected)
                         .align(AlignX.FILL)
                         .resizableColumn()
                         .applyToComponent {
@@ -102,13 +107,13 @@ data class RequestSettingsPanel(
                         )
 
                     // Кнопки управления Problem
-                    actionButton(AllIcons.General.Add) { handleAdd(problemsModel, "Что нужно сделать прямо сейчас... :", "Добавление задачи") { savePrompts() } }
-                    actionButton(AllIcons.Actions.Edit) { handleEdit(problemsModel, "Измените задачу:", "Редактирование") { savePrompts() } }
-                    actionButton(AllIcons.General.Remove) { handleDelete(problemsModel, "Удалить задачу?") { savePrompts() } }
+                    actionButton(AllIcons.General.Add, "Adding a task") { handleAdd(problemsModel, "What needs to be done right now... :") { savePrompts() } }
+                    actionButton(AllIcons.Actions.Edit, "Editing") { handleEdit(problemsModel, "Change the task:") { savePrompts() } }
+                    actionButton(AllIcons.General.Remove, "Removing") { handleDelete(problemsModel, "Delete task?") { savePrompts() } }
 
                     // === Новые кнопки ===
-                    actionButton(AllIcons.Actions.MenuSaveall) { exportToXml(problemsModel, "problems") }
-                    actionButton(AllIcons.Actions.MenuOpen) { importFromXml(problemsModel, "problems") { savePrompts() } }
+                    actionButton(AllIcons.Actions.MenuSaveall, "Export") { exportToXml(problemsModel, "problems") }
+                    actionButton(AllIcons.Actions.MenuOpen, "Import") { importFromXml(problemsModel, "problems") { savePrompts() } }
                 }
             }.apply {
                 expanded = instructionsService.state.systemExpanded
@@ -131,7 +136,7 @@ data class RequestSettingsPanel(
     private fun exportToXml(model: DefaultComboBoxModel<String>, type: String) {
         val descriptor = FileSaverDescriptor(
             "Export $type",
-            "Выберите место для сохранения XML-файла"
+            "Select a location to save the XML file"
         ).apply {
             withExtensionFilter("XML files", "xml")
         }
@@ -148,12 +153,12 @@ data class RequestSettingsPanel(
             FileUtil.writeToFile(targetFile, xml, false)
 
             Messages.showInfoMessage(
-                "Экспорт успешно завершён:\n${targetFile.absolutePath}",
-                "Успешно"
+                "Export completed successfully:\n${targetFile.absolutePath}",
+                "Success"
             )
         } catch (e: Exception) {
             logger.error(e)
-            Messages.showErrorDialog("Ошибка при экспорте: ${e.message}", "Ошибка")
+            Messages.showErrorDialog("Error while exporting: ${e.message}", "Error")
         }
     }
 
@@ -176,13 +181,13 @@ data class RequestSettingsPanel(
                 imported.forEach { model.addElement(it) }
 
                 onSave()
-                Messages.showInfoMessage("Импортировано ${imported.size} записей", "Успешно")
+                Messages.showInfoMessage("Imported ${imported.size} records", "Success")
             } else {
-                Messages.showWarningDialog("Файл не содержит записей", "Предупреждение")
+                Messages.showWarningDialog("The file does not contain any records", "Warning")
             }
         } catch (e: Exception) {
             logger.error(e)
-            Messages.showErrorDialog("Ошибка при импорте: ${e.message}", "Ошибка")
+            Messages.showErrorDialog("Error while importing: ${e.message}", "Error")
         }
     }
 
@@ -231,10 +236,11 @@ data class RequestSettingsPanel(
 
     // ==================== Остальные методы без изменений ====================
 
-    private fun Row.actionButton(icon: Icon, action: () -> Unit) = button("") { action() }
+    private fun Row.actionButton(icon: Icon, tooltip: String, action: () -> Unit) = button("") { action() }
         .customize(UnscaledGaps(left = 8))
         .applyToComponent {
             this.icon = icon
+            this.toolTipText = tooltip
             text = null
             margin = JBUI.emptyInsets()
             horizontalAlignment = SwingConstants.CENTER
@@ -244,33 +250,31 @@ data class RequestSettingsPanel(
             putClientProperty("JButton.buttonType", "square")
         }
 
-    private fun createTooltipRenderer() = object : DefaultListCellRenderer() {
-        override fun getListCellRendererComponent(
-            list: JList<*>, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean
-        ): Component {
-            val c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus) as JComponent
-            if (index >= 0 && value != null) c.toolTipText = value.toString()
-            return c
+    private fun handleAdd(model: DefaultComboBoxModel<String>, title: String, onSave: () -> Unit) {
+        val dialog = MultiLineInputDialog(project, "Add New Item", "")
+
+        if (dialog.showAndGet()) { // showAndGet возвращает true, если нажата кнопка OK
+            val result = dialog.getText()
+            if (result.isNotBlank()) {
+                model.addElement(result.trim())
+                onSave()
+            }
         }
     }
 
-    private fun handleAdd(model: DefaultComboBoxModel<String>, msg: String, title: String, onSave: () -> Unit) {
-        val result = Messages.showInputDialog(msg, title, Messages.getQuestionIcon())
-        if (!result.isNullOrBlank()) {
-            model.addElement(result.trim())
-            onSave()
-        }
-    }
-
-    private fun handleEdit(model: DefaultComboBoxModel<String>, msg: String, title: String, onSave: () -> Unit) {
+    private fun handleEdit(model: DefaultComboBoxModel<String>, title: String, onSave: () -> Unit) {
         val selected = model.selectedItem as? String ?: return
-        val edited = Messages.showInputDialog(msg, title, Messages.getQuestionIcon(), selected, null)
-        if (!edited.isNullOrBlank() && edited.trim() != selected) {
-            val index = model.getIndexOf(selected)
-            model.removeElement(selected)
-            model.insertElementAt(edited.trim(), index)
-            model.selectedItem = edited.trim()
-            onSave()
+        val dialog = MultiLineInputDialog(project, "Edit Item", selected)
+
+        if (dialog.showAndGet()) {
+            val edited = dialog.getText()
+            if (edited.isNotBlank() && edited.trim() != selected) {
+                val index = model.getIndexOf(selected)
+                model.removeElement(selected)
+                model.insertElementAt(edited.trim(), index)
+                model.selectedItem = edited.trim()
+                onSave()
+            }
         }
     }
 
@@ -278,7 +282,7 @@ data class RequestSettingsPanel(
         val selected = model.selectedItem as? String ?: return
         if (Messages.showYesNoDialog(
                 "$msg «$selected»?",
-                "Подтверждение",
+                "Confirmation",
                 Messages.getQuestionIcon()
             ) == Messages.YES
         ) {
@@ -286,4 +290,34 @@ data class RequestSettingsPanel(
             onSave()
         }
     }
+}
+
+class MultiLineInputDialog(
+    project: Project?,
+    title: String,
+    initialText: String = ""
+) : DialogWrapper(project) {
+
+    private val textArea = JBTextArea(10, 50).apply {
+        text = initialText
+        lineWrap = true
+        wrapStyleWord = true
+        // Упрощаем вставку переноса строки по Enter,
+        // так как в диалогах Enter обычно нажимает "OK"
+        emptyText.text = "Введите текст здесь..."
+    }
+
+    init {
+        this.title = title
+        init() // Инициализация компонентов диалога
+    }
+
+    override fun createCenterPanel(): JComponent {
+        // Оборачиваем в ScrollPane, чтобы текст не улетал за границы
+        return JBScrollPane(textArea)
+    }
+
+    override fun getPreferredFocusedComponent(): JComponent = textArea
+
+    fun getText(): String = textArea.text
 }

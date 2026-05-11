@@ -12,7 +12,7 @@ import com.intellij.openapi.diagnostic.Logger
 
 class TaskCompositorAction : AnAction("TaskCompositorDialog", "Open TaskCompositorDialog", AllIcons.Actions.AddList) {
     private val logger = Logger.getInstance("TaskCompositorAction")
-    private val settings = PluginSettingsService()
+    private val settings = PluginSettingsService.instance
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return

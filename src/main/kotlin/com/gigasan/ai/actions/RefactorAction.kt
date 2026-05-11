@@ -12,7 +12,7 @@ import com.intellij.openapi.diagnostic.Logger
 
 class RefactorAction: AnAction("Refactor", "Send/Find code block from project to refactor", AllIcons.Actions.ShowCode)  {
     private val logger = Logger.getInstance("RefactorAction")
-    private val settings = PluginSettingsService()
+    private val settings = PluginSettingsService.instance
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return

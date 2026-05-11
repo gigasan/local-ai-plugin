@@ -8,9 +8,9 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.diagnostic.Logger
 
-class CleanChatAction : AnAction("Clean Chat", "Remove all chats", AllIcons.Actions.ClearCash) {
+class CleanChatAction : AnAction("Clearing Chat", "Remove all chats", AllIcons.Actions.ClearCash) {
     private val logger = Logger.getInstance("CleanChatAction")
-    private val settings = PluginSettingsService()
+    private val settings = PluginSettingsService.instance
 
     override fun actionPerformed(e: AnActionEvent) {
         ChatPanel.instance?.cleanAllTasks()

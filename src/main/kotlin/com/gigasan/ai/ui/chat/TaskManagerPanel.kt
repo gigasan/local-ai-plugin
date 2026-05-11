@@ -232,9 +232,7 @@ class TaskManagerPanel : JPanel() {
 
         panel.add(wrapper, BorderLayout.EAST)
 
-        if (!visible) {
-            panel.hide()
-        }
+        panel.isVisible = visible
 
         return panel
     }
