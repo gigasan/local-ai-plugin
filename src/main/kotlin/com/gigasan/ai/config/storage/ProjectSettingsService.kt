@@ -6,6 +6,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.util.xmlb.annotations.Tag
 
@@ -13,7 +14,7 @@ import com.intellij.util.xmlb.annotations.Tag
 @State(name = "com.gigasan.localai.config.ProjectSettingsService", storages = [Storage("ProjectSettingsService.xml")])
 @Service(Service.Level.PROJECT)
 class ProjectSettingsService(private val project: Project) : PersistentStateComponent<ProjectSettingsService.State> {
-    //private val project: com.intellij.openapi.project.Project // Передайте его в конструктор, если нужно
+    private val logger = Logger.getInstance("ProjectSettingsService")
 
     data class State (
         // connection
@@ -22,8 +23,10 @@ class ProjectSettingsService(private val project: Project) : PersistentStateComp
         // panel states
         var connectionExpanded: Boolean = true,
         var modelSelectionExpanded: Boolean = true,
+        var instructionSetExpanded: Boolean = true,
+        var taskCompositorExpanded: Boolean = true,
         var chatExpanded: Boolean = true,
-        var promptsExpanded: Boolean = true,
+        var advancedExpanded: Boolean = true,
 
         // chat system prompt
         var chatSystemPrompt: String = "",
@@ -52,11 +55,9 @@ class ProjectSettingsService(private val project: Project) : PersistentStateComp
     }
 
     fun notifyChange(project: Project) {
-        // Отправляем уведомление только в рамках текущего проекта
         project.messageBus
             .syncPublisher(SettingsChangeListener.TOPIC)
             .settingsChanged()
-
         listeners.forEach { it() }
     }
 

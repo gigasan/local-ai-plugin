@@ -35,19 +35,28 @@ class ChatToolWindowFactory : ToolWindowFactory {
             }
         })
 
-        val settingsAction = object: AnAction("Settings", "Settings", AllIcons.General.Settings) {
+        val settingsAction = object : AnAction("Settings", "Settings", AllIcons.General.Settings) {
             override fun actionPerformed(e: AnActionEvent) {
                 val project = e.project ?: return
+                val settingsUtil = ShowSettingsUtil.getInstance()
+                val configurableClass = com.gigasan.ai.config.PluginSettingsConfigurable::class.java
+
                 ApplicationManager.getApplication().invokeLater {
-                    ShowSettingsUtil.getInstance().showSettingsDialog(
-                        project,
-                        com.gigasan.ai.config.PluginSettingsConfigurable::class.java
-                    )
+                    if (com.intellij.util.PlatformUtils.isPyCharm()) {
+                        // Специфичный хак для PyCharm: открываем изолированное окно
+                        // Создаем инстанс вручную для editConfigurable
+                        val configurable = com.gigasan.ai.config.PluginSettingsConfigurable(project)
+                        settingsUtil.editConfigurable(project, configurable)
+                    } else {
+                        // Для всех остальных IDE (IntelliJ IDEA, WebStorm и т.д.)
+                        // используем стандартное общее окно настроек
+                        settingsUtil.showSettingsDialog(project, configurableClass)
+                    }
                 }
             }
         }
 
-        val settings = PluginSettingsService()
+        val settings = PluginSettingsService.instance
         val actionList = buildList {
             if (settings.state.enableSettingsAction) {
                 add(settingsAction)

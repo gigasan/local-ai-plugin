@@ -55,6 +55,7 @@ class ModelParser(project: Project) {
         val eval_batch_size: Int? = null,
         val parallel: Int? = null,
         val flash_attention: Boolean? = null,
+        val num_experts: Int? = null,
         val offload_kv_cache_to_gpu: Boolean? = null,
     )
 
@@ -90,7 +91,7 @@ class ModelParser(project: Project) {
             tools = capabilities?.trained_for_tool_use ?: false,
             source = Source.LM_STUDIO,
             reasoningOptions = capabilities?.reasoning?.allowed_options ?: emptyList(),
-            defaultReasoning = capabilities?.reasoning?.default
+            defaultReasoning = capabilities?.reasoning?.default,
         )
     }
 
@@ -174,21 +175,21 @@ class ModelParser(project: Project) {
 
 
     fun parseModels(jsonString: String, apiId: Int): List<Model> {
-        val json = Json
+        val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
 
-        /*
         val json = Json {
-            ignoreUnknownKeys = true
-            coerceInputValues = true
+            // Если мы в режиме разработки, хотим знать о новых полях (будет ошибка)
+            // Если у пользователя — игнорируем всё лишнее
+            ignoreUnknownKeys = !isInternal
+            coerceInputValues = !isInternal
         }
-        */
 
         val list = try {
             when (BackendApi.fromId(apiId)) {
                 BackendApi.LM_STUDIO_API -> {
                     val lmResponse = json.decodeFromString<LmStudioResponse>(jsonString)
-                    lmResponse.models.map { it.toModel() }
-                    //lmResponse.models.filter { it.type == "llm" }.map { it.toModel() }
+                    //lmResponse.models.map { it.toModel() }
+                    lmResponse.models.filter { it.type == "llm" }.map { it.toModel() }
                 }
                 BackendApi.OLLAMA_API -> {
                     val ollamaResponse = json.decodeFromString<OllamaResponse>(jsonString)

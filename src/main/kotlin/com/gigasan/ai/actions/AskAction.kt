@@ -11,7 +11,7 @@ import com.intellij.openapi.diagnostic.Logger
 
 class AskAction : AnAction("Ask", "Ask local AI", AllIcons.General.Balloon) {
     private val logger = Logger.getInstance("AskAction")
-    private val settings = PluginSettingsService()
+    private val settings = PluginSettingsService.instance
 
     override fun actionPerformed(e: AnActionEvent) {
         ChatPanel.instance?.sendExternalMessage("Привет. Напиши простую программу на python")

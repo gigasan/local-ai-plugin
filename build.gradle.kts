@@ -69,6 +69,16 @@ tasks {
     buildPlugin {
         // архив будет build\distributions\local-ai-plugin.zip
     }
+    runIde {
+        // Internal Mode для песочницы
+        systemProperty("idea.is.internal", "true")
+
+        // Можно выделить больше памяти для тестов
+        jvmArgs("-Xmx2G")
+
+        // Это поможет скрыть часть логов про Jakarta/Spring
+        jvmArgs("-Didea.load.plugins.category=false")
+    }
 }
 val compileKotlin: KotlinCompile by tasks
 compileKotlin.compilerOptions {
