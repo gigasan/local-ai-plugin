@@ -31,6 +31,7 @@ class ProjectSettingsService(private val project: Project) : PersistentStateComp
         // chat system prompt
         var chatSystemPrompt: String = "",
 
+        var closeAfterSent: Boolean = true,
         var selectEntireLines: Boolean = true,
         var useSoftWrap: Boolean = true,
         var fontName: String = "JetBrains Mono",

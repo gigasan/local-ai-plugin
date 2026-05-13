@@ -69,6 +69,6 @@ class ChatToolWindowFactory : ToolWindowFactory {
     fun updateToolWindowTitle(toolWindow: ToolWindow) {
         val prov = DefaultChatConfigProvider(toolWindow.project)
         val model = prov.buildEndpointSetting().selectedModelName
-        toolWindow.title = if (model.isNotBlank()) model else ""
+        toolWindow.title = model.ifBlank { "" }
     }
 }

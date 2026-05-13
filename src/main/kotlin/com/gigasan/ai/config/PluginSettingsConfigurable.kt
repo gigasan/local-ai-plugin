@@ -49,7 +49,6 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
     private lateinit var chatCombo: ComboBox<String>
     private lateinit var modelsCombo: ComboBox<String>
 
-
     private val chatInstructionsModel = MutableCollectionComboBoxModel<String>()
     private lateinit var chatInstructionCombo: ComboBox<String>
     private val instructionsService = InstructionsService.instance
@@ -77,7 +76,6 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
         lateinit var modelSettingsPanel: DialogPanel
         lateinit var instructionsSettingsPanel: DialogPanel
 
-
         fun refreshUIFromModel(mcc: ModelSettingsPanel) {
             modelSettingsPanel.reset()
         }
@@ -103,8 +101,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
         myPanel = panel {
             // Регистрируем внешнюю панель в жизненном цикле этой DSL панели
             onIsModified {
-                modelSettingsPanel.isModified()
-                instructionsSettingsPanel.isModified()
+                modelSettingsPanel.isModified() || instructionsSettingsPanel.isModified()
             }
             onApply {
                 modelSettingsPanel.apply()
@@ -125,10 +122,6 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                             setter = { newBackend ->
                                 if (newBackend != null) {
                                     projectSettingsService.state.backendEndpoint = newBackend
-//                                    endpointSettings = pluginSettingsService.getSettingsFor(newBackend)
-//                                    logger.info("SET ${newBackend} Updated $endpointSettings")
-//                                    modelCache = ModelCacheService.instance.getSettingsFor(projectSettingsService.state.backendEndpoint)
-//                                    logger.info("SET ${newBackend} Updated $modelCache")
                                 }
                             }
                         )
@@ -248,6 +241,13 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                             setter = { value: Boolean -> projectSettingsService.state.selectEntireLines = value }
                         )
                 }
+                row("Other: ") {
+                    checkBox("Close dialog on send")
+                        .bindSelected(
+                            getter = { projectSettingsService.state.closeAfterSent },
+                            setter = { value: Boolean -> projectSettingsService.state.closeAfterSent = value }
+                        )
+                }
             }.apply {
                 // Разворачиваем группу сразу после создания
                 expanded = projectSettingsService.state.taskCompositorExpanded
@@ -308,11 +308,13 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
             onApply {
                 logger.info("onApply")
                 modelSettingsPanel.apply()
+                instructionsSettingsPanel.apply()
                 projectSettingsService.notifyChange(project)
             }
             onReset {
                 logger.info("onReset")
                 modelSettingsPanel.reset()
+                instructionsSettingsPanel.reset()
             }
 
         }
@@ -335,7 +337,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
 
     private fun updateDependentCombos(endpoint: BackendEndpoint, endpointSettings: EndpointSettings, modelCache: ModelCache) {
 
-        // URL
+        // Base URL
         val newUrl = endpoint.engine.defaultHost
         urlModel.update(newUrl)
         val urlToSelect = newUrl.firstOrNull { it == endpointSettings.baseUrl }?: newUrl.firstOrNull() ?: ""
@@ -345,7 +347,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
             urlCombo.selectedItem = urlToSelect
         }
 
-        // Models
+        // Models URL
         val newModels = endpoint.defaultModelList
         modelsModel.update(newModels)
         val modelToSelect = newModels.firstOrNull { it == endpointSettings.modelListEndpointUrl }?: newModels.firstOrNull() ?: ""
@@ -355,7 +357,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
             modelsCombo.selectedItem = modelToSelect
         }
 
-        // Chat
+        // Chat URL
         val newChat = endpoint.defaultResponses
         chatModel.update(newChat)
         val chatToSelect = newChat.firstOrNull { it == endpointSettings.chatEndpointUrl }?: newChat.firstOrNull() ?: ""
@@ -364,20 +366,6 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
         if (::chatCombo.isInitialized) {
             chatCombo.selectedItem = chatToSelect
         }
-
-        // Model cache -> modelCombo (modelName <-> modelKey)
-        modelCache.models.forEach { model ->
-            //logger.info("updateDependentCombos model ${model.displayName} is in list ")
-        }
-
-        logger.info("updateDependentCombos modelCache=${modelCache.models.joinToString(", ") { it.displayName }}")
-
-        val newModelName = endpointSettings.selectedModelName
-        val newModelKey = endpointSettings.selectedModelKey
-        logger.info("updateDependentCombos modelName=$newModelName ModelKey=$newModelKey")
-//        if (::modelCombo.isInitialized) {
-//            modelCombo.selectedItem = newModelName
-//        }
     }
 
 }

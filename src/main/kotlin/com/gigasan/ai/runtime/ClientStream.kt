@@ -374,6 +374,7 @@ data class StreamEvent(
     val raw: String? = null,
     val cleanJson: String? = null,
     var indicatorText: String = "",
+    var indicatorFraction: Double? = null,
 )
 
 class StreamParser(private val project: Project) : JsonFileLogger {
@@ -470,74 +471,87 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
             EventType.MODEL_LOAD_START -> {
                 progress = 0.0
                 logger.info("ResultBuilder: MODEL_LOAD_START event.content=${event.content}")
-                event.indicatorText = String.format("MODEL_LOAD_PROGRESS %s %.2f%%", model, progress * 100.0)
+                event.indicatorText = String.format("LOADING %.2f%%", progress * 100.0)
+                event.indicatorFraction = progress
             }
 
             EventType.MODEL_LOAD_PROGRESS -> {
                 progress = (event.payload as? StreamPayload.LoadProgress)?.progress?: 0.0
                 logger.info("ResultBuilder: MODEL_LOAD_PROGRESS $progress")
-                event.indicatorText = String.format("MODEL_LOAD_PROGRESS %s %.2f%%", model, progress * 100.0)
+                event.indicatorText = String.format("LOADING %.2f%%", progress * 100.0)
+                event.indicatorFraction = progress
             }
 
             EventType.MODEL_LOAD_END -> {
                 logger.info("ResultBuilder: MODEL_LOAD_END event.content=${event.content}")
-                event.indicatorText = String.format("MODEL_LOAD_PROGRESS %s %.2f%%", model, progress * 100.0)
+                event.indicatorText = String.format("LOADING %.2f%%", progress * 100.0)
+                event.indicatorFraction = progress
             }
 
             EventType.PROMPT_START -> {
                 logger.info("ResultBuilder: PROMPT_START")
                 progress = 0.0
-                event.indicatorText = String.format("PROMPT_PROGRESS %.2f%%", progress * 100.0)
+                event.indicatorText = String.format("PROMPT %.2f%%", progress * 100.0)
+                event.indicatorFraction = null
             }
 
             EventType.PROMPT_PROGRESS -> {
                 progress = (event.payload as? StreamPayload.PromptProgress)?.progress?: 0.0
                 logger.warn("ResultBuilder: PROMPT_PROGRESS $progress")
-                event.indicatorText = String.format("PROMPT_PROGRESS %.2f%%", progress * 100.0)
+                event.indicatorText = String.format("PROMPT %.2f%%", progress * 100.0)
+                event.indicatorFraction = null
             }
 
             EventType.PROMPT_END -> {
                 logger.info("ResultBuilder: PROMPT_END")
-                event.indicatorText = String.format("PROMPT_PROGRESS %.2f%%", progress * 100.0)
+                event.indicatorText = String.format("PROMPT %.2f%%", progress * 100.0)
+                event.indicatorFraction = null
             }
 
             EventType.REASONING_START -> {
                 logger.info("ResultBuilder: REASONING_START")
                 val modelTokens = reasoning.length + output.length
-                event.indicatorText = String.format("REASONING_START %d tok", modelTokens)
+                event.indicatorText = String.format("REASONING %d tok", modelTokens)
+                event.indicatorFraction = null
             }
 
             EventType.REASONING_DELTA -> {
                 reasoning.append((event.payload as? StreamPayload.Reasoning)?.content?: "")
                 val modelTokens = reasoning.length + output.length
-                event.indicatorText = String.format("REASONING_DELTA %d tok", modelTokens)
+                event.indicatorText = String.format("REASONING %d tok", modelTokens)
+                event.indicatorFraction = null
             }
             EventType.REASONING_END -> {
                 logger.info("ResultBuilder: REASONING_END")
                 val modelTokens = reasoning.length + output.length
-                event.indicatorText = String.format("REASONING_END %d tok", modelTokens)
+                event.indicatorText = String.format("REASONING %d tok", modelTokens)
+                event.indicatorFraction = null
             }
 
             EventType.MESSAGE_START -> {
                 logger.info("ResultBuilder: MESSAGE_START")
                 val modelTokens = reasoning.length + output.length
-                event.indicatorText = String.format("MESSAGE_START %d tok", modelTokens)
+                event.indicatorText = String.format("MESSAGING %d tok", modelTokens)
+                event.indicatorFraction = null
             }
             EventType.MESSAGE_DELTA -> {
                 output.append(event.content?: "")
                 //if (output.isEmpty() && text.isBlank()) return  // убираем первый перенос строки если он есть
                 val modelTokens = reasoning.length + output.length
-                event.indicatorText = String.format("MESSAGE_DELTA %d tok", modelTokens)
+                event.indicatorText = String.format("MESSAGING %d tok", modelTokens)
+                event.indicatorFraction = null
             }
             EventType.MESSAGE_END -> {
                 logger.info("ResultBuilder: MESSAGE_END")
                 val modelTokens = reasoning.length + output.length
-                event.indicatorText = String.format("MESSAGE_END %d tok", modelTokens)
+                event.indicatorText = String.format("MESSAGING %d tok", modelTokens)
+                event.indicatorFraction = null
             }
 
             EventType.CHAT_END -> {
                 val modelTokens = reasoning.length + output.length
                 event.indicatorText = String.format("CHAT_END %d%% tok", modelTokens)
+                event.indicatorFraction = null
                 this.finalPayload = data
 
                 // Если payload это наше новое событие завершения
