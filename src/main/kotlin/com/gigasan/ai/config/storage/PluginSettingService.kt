@@ -23,7 +23,7 @@ class PluginSettingsService : PersistentStateComponent<PluginSettingsService.Sta
         var enableDebugLog: Boolean = false,
 
         // toolbar actions
-        var enableDebugFeature: Boolean = true,
+        var enableDebugFeature: Boolean = false,
         var enableTaskCompositor: Boolean = true,
         var enableCleanChat: Boolean = true,
         var enableAutoSearch: Boolean = true,

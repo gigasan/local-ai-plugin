@@ -94,17 +94,17 @@ import com.intellij.openapi.actionSystem.AnAction
 class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true), Disposable {
     private val provider get() = project.service<PluginConfigProvider>()
     private var updateTimer: Timer? = null
-    private var jbCefBrowser = JBCefBrowser() // или через builder, если нужно
-    // 2. Создаём jsQuery ТОЛЬКО после того, как браузер полностью создан
-    private lateinit var jsQuery: JBCefJSQuery   // используем late init
+    // БРАУЗЕР: Теперь он создастся только при обращении
+    private val jbCefBrowser by lazy { JBCefBrowser() }
+
+    // JS QUERY: Тоже ленивый
+    private lateinit var jsQuery: JBCefJSQuery
     // ← сюда добавь свой wrapper
     private val browserWrapper = JPanel(BorderLayout()).apply {
         // Важно: делаем так, чтобы браузер растягивался по всему доступному месту
         preferredSize = Dimension(600, 800)   // начальный разумный размер
         minimumSize = Dimension(300, 400)
-        //add(jbCefBrowser.component, BorderLayout.CENTER)
-        // Опционально: можно добавить тонкую рамку для отладки
-        border = BorderFactory.createLineBorder(Color.GRAY)
+        border = BorderFactory.createLineBorder(JBColor.GRAY)
     }
 
     private lateinit var layeredPane: JLayeredPane
@@ -129,7 +129,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         fun buildTaskFromString(instruction: String, request: String): TaskData {
             val task = TaskData(
                 id = System.currentTimeMillis().toString(),
-                title = "✏️",
+                title = "♪",
                 //description = "chat message",
                 //content = text,
                 zoneType = "Chat",
@@ -147,7 +147,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         fun buildTaskFromInstructionQuestionTask(instruction: String, question: String): TaskData {
             val task = TaskData(
                 id = System.currentTimeMillis().toString(),
-                title = "✏️",
+                title = "♬",
                 zoneType = "Compositor",
                 status = TaskStatus.CREATED,
                 footer = "",
@@ -246,7 +246,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
 
         // Создаём браузер (лучше здесь, а не в поле)
-        jbCefBrowser = JBCefBrowser()
+        //jbCefBrowser = JBCefBrowser()
 
         // === LAYERED PANE ===
         layeredPane = JLayeredPane().apply { layout = null }
@@ -645,11 +645,11 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             maxLen = 100
         )
 
-        var data_task_id = "data-task-id='${task.id}'"
+        val dataTaskId = "data-task-id='${task.id}'"
 
         val htmlText = buildString {
             append("<details>")
-            append("<summary class='chat-header' ${data_task_id}>${task.title} ${description}</summary>\n")
+            append("<summary class='chat-header' ${dataTaskId}>${task.title} ${description}</summary>\n")
             append("<div class='chat-body'>")
             append("<div class='chat'>")
                 if (task.question.isNotBlank()) {
@@ -658,14 +658,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                     append(MarkdownRenderer.toHtml(task.question))
                     append("</div>")
                 }
-
-//                if (task.content.isNotBlank()) {
-//                    append("<div class='bubble-user'>")
-//                    append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
-//                    append(MarkdownRenderer.toHtml(task.content))
-//                    append("</div>")
-//                }
-
                 if (task.answer.isNotBlank() || task.reasoning.isNotBlank()) {
                     append("<div class='bubble-assistant'>")
                     append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
@@ -752,13 +744,27 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         // Двигаем анимацию не чаще, чем раз в 150-200 мс,
         // чтобы скорость была комфортной
-        if (now - lastAnimationMs > 180) {
-            val baseMsg = event.indicatorText.replace("\n", " ")
-            indicator.text = createSmartMarquee(baseMsg, 25)
-            lastAnimationMs = now
-        }
+        //if (now - lastAnimationMs > 50) {
+        val baseMsg = event.indicatorText.replace("\n", " ")
+        val fraction = event.indicatorFraction
 
+        logger.info("event.indicatorFraction=${event.indicatorFraction} indicator.isIndeterminate=${indicator.isIndeterminate}")
+        if (fraction == null) {
+            if (!indicator.isIndeterminate) {
+                indicator.fraction = 0.0
+                indicator.isIndeterminate = true
+            }
+        } else {
+            if (indicator.isIndeterminate)
+            {
+                indicator.isIndeterminate = false
+            }
+            indicator.fraction = event.indicatorFraction!!.coerceIn(0.0, 0.99)
+        }
+        indicator.text = createSmartMarquee(baseMsg, 25)
+        lastAnimationMs = now
         indicator.checkCanceled()
+        //}
     }
 
     fun processChatTask(task: TaskData, indicator: ProgressIndicator): TaskResult {
@@ -767,7 +773,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             //logger.info("model = $model")
             val request = task.question.trimIndent()
             val chatContext = ChatRequestBuilder(project)
-                .system(provider.buildChatSystem())
+                .system(task.instruction)
                 .memory(limit = 5)
                 .user(request)
                 .stream(provider.buildStream())
@@ -984,7 +990,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         private val parser = Parser.builder().build()
 
         private val renderer = HtmlRenderer.builder()
-            .escapeHtml(false)
+            .escapeHtml(true)
             .attributeProviderFactory(object : AttributeProviderFactory {
 
                 override fun apply(context: LinkResolverContext): AttributeProvider {

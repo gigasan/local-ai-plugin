@@ -34,6 +34,7 @@ dependencies {
     implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
     implementation("org.xerial:sqlite-jdbc:3.45.2.0")
     implementation("org.eclipse.jgit:org.eclipse.jgit:7.2.1.202505142326-r")
+    implementation("com.knuddels:jtokkit:1.1.0")
     intellijPlatform {
         intellijIdea(targetVersion)
         bundledPlugin("com.intellij.java")

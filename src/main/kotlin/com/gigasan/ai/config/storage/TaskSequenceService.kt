@@ -28,7 +28,9 @@ class TaskSequenceService : PersistentStateComponent<TaskSequence> {
 // State класс — то, что именно будет записываться в XML
 //@Tag("TaskSequence")
 data class TaskSequence(
-    var items: MutableList<WorkItem> = mutableListOf()
+    var items: MutableList<WorkItem> = mutableListOf(),
+    var includeProblem: Boolean = true,
+    var wrapDataBlock: Boolean = false,
 )
 
 data class WorkItem(

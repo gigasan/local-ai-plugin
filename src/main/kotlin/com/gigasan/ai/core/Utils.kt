@@ -14,6 +14,31 @@ import javax.swing.DefaultListCellRenderer
 import javax.swing.JComponent
 import javax.swing.JList
 
+import com.knuddels.jtokkit.Encodings
+import com.knuddels.jtokkit.api.EncodingType
+
+object TokenCalculator {
+    private val registry = Encodings.newDefaultEncodingRegistry()
+    private val encoding = registry.getEncoding(EncodingType.CL100K_BASE)
+
+    fun countTokens(text: String?): Int {
+        if (text.isNullOrBlank()) return 0
+        return encoding.countTokens(text)
+    }
+}
+
+fun countWords(text: String?): Int {
+    if (text.isNullOrBlank()) return 0
+    // Удаляем лишние пробелы по краям и делим по любым пробельным символам
+    return text.trim().split("\\s+".toRegex()).size
+}
+
+fun estimateTokens(text: String?): Int {
+    if (text.isNullOrBlank()) return 0
+    // Грубая оценка: символы / 3.5 для смешанного текста (RU/EN)
+    return (text.length / 3.5).toInt().coerceAtLeast(1)
+}
+
 fun createTooltipRenderer() = object : DefaultListCellRenderer() {
     override fun getListCellRendererComponent(
         list: JList<*>, value: Any?, index: Int, isSelected: Boolean, cellHasFocus: Boolean
@@ -111,6 +136,13 @@ fun projectHasKotlinSource(project: Project): Boolean {
 
 fun TextRange.toIntRange(): IntRange = IntRange(this.startOffset, this.endOffset)
 
+fun escapeHtml(text: String): String {
+    return text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#39;")
+}
 
 fun Long.toHumanReadableSize(): String {
     if (this < 1024) return "$this B"
@@ -140,4 +172,7 @@ fun wrapCode(code: String?, language: String? = null): String {
     return "$fence$lang\n$code\n$fence"
 }
 
-
+fun wrapData(block: String, begin: String = "===DATA===", end: String = "===DATA END==="): String {
+    if (block.isEmpty()) return ""
+    return "\n$begin\n\n$block\n\n$end\n"
+}

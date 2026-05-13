@@ -2,6 +2,7 @@ package com.gigasan.ai.actions
 
 import com.gigasan.ai.config.DefaultChatConfigProvider
 import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.ui.MyIcons
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -9,7 +10,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.diagnostic.Logger
 
-class AskAction : AnAction("Ask", "Ask local AI", AllIcons.General.Balloon) {
+class AskAction : AnAction("Ask", "Ask local AI", MyIcons.Balloon) {
     private val logger = Logger.getInstance("AskAction")
     private val settings = PluginSettingsService.instance
 

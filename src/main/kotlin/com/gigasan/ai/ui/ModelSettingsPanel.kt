@@ -12,7 +12,6 @@ import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.config.storage.supportsReasoning
 import com.gigasan.ai.core.FileLogger
 import com.gigasan.ai.core.createModelListRenderer
-import com.gigasan.ai.runtime.AIMetrics
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -48,9 +47,10 @@ data class ModelSettingsPanel(
 
     fun createModelSettingsPanel(components: ModelSettingsPanel): DialogPanel {
         val project = components.project
-        val settings = ProjectSettingsService.getInstance(project)
+        val projectSettings = ProjectSettingsService.getInstance(project).state
+        var panelExpanded = projectSettings.modelSelectionExpanded
+
         selectedModel = components.modelsList.find { it.displayName == components.endpointSettings.selectedModelName }
-        var panelExpanded = settings.state.modelSelectionExpanded
         return panel {
             collapsibleGroup("Model Settings (Endpoint Dependent)") {
                 row("Model:") {
@@ -174,9 +174,9 @@ data class ModelSettingsPanel(
                 updateKeepAliveUI(initialModel, components, keepAliveLabel, keepAliveTextField, panelExpanded)
                 updateReasoningUI(initialModel, components, labelReasoning, reasoningComboBox, panelExpanded)
             }.apply {
-                expanded = settings.state.modelSelectionExpanded
+                expanded = projectSettings.modelSelectionExpanded
                 addExpandedListener { isExpanded ->
-                    settings.state.modelSelectionExpanded = isExpanded
+                    projectSettings.modelSelectionExpanded = isExpanded
                     panelExpanded = isExpanded
                 }
             }.customize(UnscaledGapsY(bottom = 0))

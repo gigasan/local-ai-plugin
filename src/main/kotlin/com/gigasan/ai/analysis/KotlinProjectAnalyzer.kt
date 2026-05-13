@@ -236,8 +236,8 @@ class KotlinProjectAnalyzer: ProjectRefactor, ProjectAnalyzer, AiProjectAnalyzer
                 if (properties.isNotEmpty()) {
                     codeRes.append("  Properties:\n")
                     properties.forEach { prop ->
-                        val type = prop.typeReference?.text ?: "Inferred"
-                        codeRes.append("    - ${prop.name}: $type\n")
+                        val typeT = prop.typeReference?.text ?: "Inferred"
+                        codeRes.append("    - ${prop.name}: $typeT\n")
                     }
                 }
 
