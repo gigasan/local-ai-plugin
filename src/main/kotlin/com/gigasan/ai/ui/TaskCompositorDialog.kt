@@ -101,7 +101,10 @@ class TaskCompositorDialog(
             return super.getToolTipText(event)
         }
     }.apply {
-        cellRenderer = MyTwoLineRenderer()
+        cellRenderer = MyTwoLineRenderer(
+            ProjectSettingsService.getInstance(project).state.fontName,
+            ProjectSettingsService.getInstance(project).state.fontSize
+        )
     }
 
     val isp = InstructionsSettingsPanel(
@@ -257,8 +260,6 @@ class TaskCompositorDialog(
 
         val rootPanel = JBPanel<JBPanel<*>>(BorderLayout())
 
-
-
         val centerPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             border = JBUI.Borders.customLine(JBColor.border(), 1, 1, 1, 1)
             //add(JBLabel("Статус: Готов"), BorderLayout.WEST)
@@ -292,7 +293,9 @@ class TaskCompositorDialog(
             preferredSize = Dimension((1280/1.5).toInt(), (720/1.5).toInt())
         }
 
-        tasksList.cellRenderer = MyTwoLineRenderer()
+        tasksList.cellRenderer = MyTwoLineRenderer(
+            ProjectSettingsService.getInstance(project).state.fontName,
+            ProjectSettingsService.getInstance(project).state.fontSize)
 
         // контекстное меню
         val group = DefaultActionGroup()
@@ -334,19 +337,19 @@ class TaskCompositorDialog(
                 e.presentation.isEnabled = tasksList.selectedIndex != -1
             }
         })
-//        group.add(object : AnAction("Delete", null, AllIcons.General.Remove) {
-//            override fun actionPerformed(e: AnActionEvent) {
-//                val index = tasksList.selectedIndex
-//                if (index != -1) (tasksList.model as DefaultListModel).remove(index)
-//                if (index < tasksModel.size) {
-//                    tasksList.selectedIndex = index
-//                }
-//                tasksList.repaint()
-//                // 4. Пересчитываем статистику (если имя влияет на байты/токены)
-//                updateTotalStats()
-//            }
-//        })
-        group.add(object : AnAction("Delete All", null, AllIcons.General.Remove) {
+        group.add(object : AnAction("Remove", null, AllIcons.General.Remove) {
+            override fun actionPerformed(e: AnActionEvent) {
+                val index = tasksList.selectedIndex
+                if (index != -1) (tasksList.model as DefaultListModel).remove(index)
+                if (index < tasksModel.size) {
+                    tasksList.selectedIndex = index
+                }
+                tasksList.repaint()
+                // 4. Пересчитываем статистику (если имя влияет на байты/токены)
+                updateTotalStats()
+            }
+        })
+        group.add(object : AnAction("Remove All", null, AllIcons.General.Remove) {
             override fun actionPerformed(e: AnActionEvent) {
                 tasksModel.clear()
                 tasksList.repaint()

@@ -1,9 +1,9 @@
 [
-  "Найди ошибки в тексте программы и исправь если они есть. Если ошибок нет, скажи об этом.",
-  "Сгенерируй набор тест кейсов.",
-  "Найди подозрительные транзакции.",
-  "Проанализируй файл.",
-  "Объясни как работает следующий блок программы.",
-  "Сделай рефакторинг для следующего фрагмента кода.",
-  "сделай что нибудь"
+  "Check the provided code for syntax, logical, and semantic errors. If no errors are found, explicitly state that the code is correct.",
+  "Based on the provided code snippet or function description, develop a set of test cases, including positive scenarios, negative testing, and edge cases.",
+  "Scan the provided transaction data for anomalies and suspicious patterns that may indicate fraud or protocol violations (e.g., sudden volume spikes or atypical transaction timing).",
+  "Perform a structural and semantic analysis of the file. Identify key entities, main points, and any potential inconsistencies within the data.",
+  "Provide a detailed, step-by-step explanation of how the following code block operates, describing inputs, intermediate transformations, and the final output.",
+  "Rewrite the provided code snippet to improve readability and performance, adhering to DRY and SOLID principles, while preserving its original functionality.",
+  "Generate technical documentation for the given module, including interface (API) descriptions, parameter definitions, and usage examples."
 ]

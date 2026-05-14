@@ -20,7 +20,7 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.impl.light.LightElement
 import kotlin.sequences.forEach
 
-class RustProjectAnalyzer(): ProjectAnalyzer, ProjectRefactor {
+class RustProjectAnalyzer(): ProjectAnalyzer {
     private val db = RustCodeDatabase.getInstance("RustProjectAnalyzer")
     private val logger = Logger.getInstance("RustProjectAnalyzer")
 

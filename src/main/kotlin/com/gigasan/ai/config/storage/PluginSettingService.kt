@@ -1,9 +1,11 @@
 package com.gigasan.ai.config.storage
 
 import com.gigasan.ai.config.BackendEndpoint
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.*
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.observable.properties.GraphProperty
 import com.intellij.openapi.observable.properties.PropertyGraph
 import com.intellij.util.xmlb.annotations.Tag
@@ -102,6 +104,18 @@ class PluginSettingsService : PersistentStateComponent<PluginSettingsService.Sta
     companion object {
         val instance: PluginSettingsService get() = service()
     }
+}
+
+fun isKotlinPluginInstalled(): Boolean {
+    return PluginManagerCore.isPluginInstalled(
+        PluginId.getId("org.jetbrains.kotlin")
+    )
+}
+
+fun isRustPluginInstalled(): Boolean {
+    return PluginManagerCore.isPluginInstalled(
+        PluginId.getId("com.jetbrains.rust")
+    )
 }
 
 @Tag("Endpoint")

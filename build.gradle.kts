@@ -40,15 +40,12 @@ dependencies {
         bundledPlugin("com.intellij.java")
         bundledPlugin("org.intellij.plugins.markdown")
         bundledPlugin("org.jetbrains.kotlin")
-        bundledPlugin("JavaScript")
+        plugin("com.jetbrains.rust", "261.22158.214")
     }
 }
 
 intellijPlatform {
     pluginConfiguration {
-        //name = "Local AI Chat"
-        //version = "0.4.0"
-        //description = "AI-чат с поддержкой Kotlin и Rust"
         ideaVersion {
             sinceBuild = "253"      // с 2025.3.2 и новее
             untilBuild = "261.*"    // до 2026.1 включительно

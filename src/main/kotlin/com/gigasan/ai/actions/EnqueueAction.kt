@@ -90,7 +90,7 @@ class EnqueueAction : AnAction("Enqueue the Task Local AI Model", "Send selected
         e.presentation.setText(dynamicText)
         // Можно также выключать кнопку, если модель не выбрана
         e.presentation.isEnabled = model.isNotBlank()
-        e.presentation.isEnabledAndVisible = settings.state.enableDebugFeature
+        e.presentation.isEnabledAndVisible = settings.state.enableTaskCompositor
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread {
