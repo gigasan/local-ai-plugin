@@ -14,15 +14,13 @@
         <!-- Обязательный базовый модуль -->
         <plugin id="com.intellij.modules.platform" />
         <plugin id="com.intellij.modules.lang" />
-        <!-- Markdown (опциональный) -->
-        <plugin id="org.intellij.plugins.markdown" />
     </dependencies>
 
     <!-- Optional Kotlin (только если пользователь установит Kotlin-плагин) -->
     <depends optional="true" config-file="com.gigasan.ai-withKotlin.xml">org.jetbrains.kotlin</depends>
 
     <!-- Optional Rust (только если пользователь установит Rust-плагин) -->
-    <depends optional="true" config-file="com.gigasan.ai-withRust.xml">org.rust.lang</depends>
+    <depends optional="true" config-file="com.gigasan.ai-withRust.xml">com.jetbrains.rust</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <projectService
@@ -41,34 +39,18 @@
             secondary="true"/>
     </extensions>
 
-    <extensions defaultExtensionNs="org.jetbrains.kotlin">
-        <supportsKotlinPluginMode supportsK1="true" supportsK2="true" />
-    </extensions>
-
     <actions>
-        <action id="LocalAI.Ask"
-                class="com.gigasan.ai.actions.AskAction"
-                text="Ask Local AI Model"
-                description="Send selected text into AI chat">
+        <group id="LocalAIGroup"
+               text="Local AI"
+               popup="true">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-        </action>
+        </group>
+
         <action id="LocalAI.Enqueue"
                 class="com.gigasan.ai.actions.EnqueueAction"
                 text="Enqueue the Task Local AI Model"
                 description="Send selected text into AI task">
-            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-        </action>
-        <action id="LocalAI.Refactor"
-                class="com.gigasan.ai.actions.RefactorAction"
-                text="Refactor with Local AI Model"
-                description="Refactor selected function">
-            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-        </action>
-        <action id="LocalAI.Analyze"
-                class="com.gigasan.ai.actions.AnalyzeAction"
-                text="Scan Project Files for AI Context"
-                description="Refactor whole project">
-            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="LocalAIGroup" anchor="last"/>
         </action>
     </actions>
 

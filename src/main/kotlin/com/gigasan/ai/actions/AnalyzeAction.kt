@@ -1,8 +1,8 @@
 package com.gigasan.ai.actions
 
 import com.intellij.openapi.ui.Messages
-import com.gigasan.ai.analysis.KotlinProjectAnalyzer
-import com.gigasan.ai.analysis.RustProjectAnalyzer
+import com.gigasan.ai.analysis.ProjectAnalyzerFactory
+import com.gigasan.ai.analysis.debugName
 import com.gigasan.ai.config.DefaultChatConfigProvider
 import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.core.projectHasKotlinSource
@@ -12,6 +12,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
@@ -54,11 +55,11 @@ class AnalyzeAction : AnAction("Analyze Project", "Scan project and open refacto
         val extensions = if (isKotlin) listOf("kt") else listOf("rs")
 
         // Создаём анализатор **один раз** снаружи
-        val projectAnalyzer = if (isKotlin) {
-            KotlinProjectAnalyzer()
-        } else {
-            RustProjectAnalyzer()
-        }
+        val factory = project.service<ProjectAnalyzerFactory>()
+        val projectAnalyzer = factory.create(project)
+
+        if (isKotlin && projectAnalyzer.debugName() != "KotlinAnalyzerFactory") { return }
+        if (!isKotlin && projectAnalyzer.debugName() != "RustAnalyzerFactory") { return }
 
         ProgressManager.getInstance().run(
             object : Task.Backgroundable(project, "AI Project Analysis", true) {

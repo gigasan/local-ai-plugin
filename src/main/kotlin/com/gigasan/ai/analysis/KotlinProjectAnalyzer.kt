@@ -1,6 +1,5 @@
 package com.gigasan.ai.analysis
 
-import com.gigasan.ai.analysis.FileHeader
 import com.gigasan.ai.core.toHumanReadableSize
 import com.gigasan.ai.core.wrapCode
 import com.intellij.codeInsight.generation.MemberChooserObject
@@ -9,13 +8,8 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.util.PsiTreeUtil
-import com.intellij.rml.dfa.ide.getAttribute
-import org.jetbrains.kotlin.analysis.api.KaContextParameterApi
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.analysis.api.permissions.KaAllowAnalysisOnEdt
-import org.jetbrains.kotlin.analysis.api.permissions.allowAnalysisOnEdt
-import org.jetbrains.kotlin.analysis.api.projectStructure.KaModule
 import org.jetbrains.kotlin.analysis.api.renderer.base.KaKeywordsRenderer
 import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.KaAnnotationRenderer
 import org.jetbrains.kotlin.analysis.api.renderer.base.annotations.KaRendererAnnotationsFilter
@@ -43,27 +37,16 @@ import org.jetbrains.kotlin.analysis.api.renderer.types.renderers.KaUsualClassTy
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaNamedFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaPropertySymbol
-import org.jetbrains.kotlin.analysis.api.symbols.name
-import org.jetbrains.kotlin.analysis.api.symbols.symbol
-import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
-import org.jetbrains.kotlin.idea.base.util.fileScope
-import org.jetbrains.kotlin.idea.refactoring.nameDeterminant
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtClass
-import org.jetbrains.kotlin.psi.KtPureClassOrObject
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtFunction
-import org.jetbrains.kotlin.psi.KtFunctionType
 import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtProperty
-import org.jetbrains.kotlin.psi.psiUtil.getChildrenOfType
-import org.jetbrains.kotlin.psi.psiUtil.getElementTextWithContext
-import org.jetbrains.kotlin.psi.psiUtil.getTextWithLocation
 import org.jetbrains.kotlin.types.Variance
 
 // Kotlin
-class KotlinProjectAnalyzer: ProjectRefactor, ProjectAnalyzer, AiProjectAnalyzer {
+class KotlinProjectAnalyzer: ProjectAnalyzer, DeepProjectAnalyzer {
 
     private val logger = Logger.getInstance("KotlinProjectAnalyzer")
 
@@ -143,7 +126,7 @@ class KotlinProjectAnalyzer: ProjectRefactor, ProjectAnalyzer, AiProjectAnalyzer
         return listOf(fileMember)
     }
 
-    // ============ AiProjectAnalyzer implementation ============
+    // ============ DeepProjectAnalyzer implementation ============
 
     override fun getFileOutline(psiFile: PsiFile): FileSummary {
         TODO("Not yet implemented")

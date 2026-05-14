@@ -7,9 +7,7 @@ import com.gigasan.ai.ui.TaskCompositorDialog
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.diagnostic.Logger
-import org.jetbrains.kotlin.idea.facet.getInstance
 
 class TaskCompositorAction : AnAction("TaskCompositorDialog", "Open TaskCompositorDialog", MyIcons.Script) {
     private val logger = Logger.getInstance("TaskCompositorAction")

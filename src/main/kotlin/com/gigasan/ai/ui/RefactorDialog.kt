@@ -1,9 +1,9 @@
 package com.gigasan.ai.ui
 
 import com.gigasan.ai.analysis.FileHeader
-import com.gigasan.ai.analysis.KotlinProjectAnalyzer
-import com.gigasan.ai.analysis.RustProjectAnalyzer
+import com.gigasan.ai.analysis.ProjectAnalyzerFactory
 import com.gigasan.ai.analysis.UniversalMember
+import com.gigasan.ai.analysis.debugName
 import com.gigasan.ai.core.projectHasKotlinSource
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.intellij.codeInsight.generation.PsiMethodMember
@@ -17,6 +17,7 @@ import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.event.DocumentEvent
@@ -34,13 +35,11 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.ui.LanguageTextField
 import com.intellij.ui.OnePixelSplitter
-import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import org.jetbrains.annotations.NotNull
 import org.jetbrains.kotlin.lombok.utils.capitalize
 import java.awt.BorderLayout
 import java.awt.Dimension
-import javax.swing.JPanel
 import javax.swing.JLabel
 import javax.swing.JComponent
 import javax.swing.ScrollPaneConstants
@@ -262,11 +261,12 @@ class RefactorDialog(private val project: Project) : DialogWrapper(project, true
         logger.info("openProjectMemberChooser Opening File Chooser for Rust/Kotlin")
 
         val isKotlin = projectHasKotlinSource(project)
-        val projectAnalyzer = if (isKotlin) {
-            KotlinProjectAnalyzer()
-        } else {
-            RustProjectAnalyzer()
-        }
+
+        val factory = project.service<ProjectAnalyzerFactory>()
+        val projectAnalyzer = factory.create(project)
+
+        if (isKotlin && projectAnalyzer.debugName() != "KotlinAnalyzerFactory") { return "" }
+        if (!isKotlin && projectAnalyzer.debugName() != "RustAnalyzerFactory") { return "" }
 
         val extensions = if (isKotlin) {
             listOf("kt", "java", "js", "kts", "xml", "css", "html", "txt", "svg", "json", "md")

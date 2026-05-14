@@ -858,7 +858,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Ai processing", true) {
 
             override fun run(indicator: ProgressIndicator) {
-                indicator.text = "Подготовка запроса..."
+                indicator.text = "Sending request..."
                 indicator.isIndeterminate = true
 
                 // Передаем индикатор в процесс, чтобы внутри цикла чтения

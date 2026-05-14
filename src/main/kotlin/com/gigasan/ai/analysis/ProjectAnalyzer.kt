@@ -1,9 +1,16 @@
 package com.gigasan.ai.analysis
 
+import com.intellij.codeInsight.generation.MemberChooserObject
 import com.intellij.psi.PsiFile
 
 interface ProjectAnalyzer {
     fun analyzePsiFile(psiFile: PsiFile, deep: Boolean=false): String
+    fun psiFileToMemberChooserList(header: MemberChooserObject, psiFile: PsiFile): List<UniversalMember>
+    fun rawFileToMemberChooserList(header: MemberChooserObject, psiFile: PsiFile): List<UniversalMember>
+}
+
+fun ProjectAnalyzer.debugName(): String {
+    return this::class.simpleName ?: "unknown"
 }
 
 // Обобщенная сущность (функция, метод, структура, интерфейс, трейт)
@@ -24,7 +31,7 @@ data class FileSummary(
 
 annotation class CodeReference
 
-interface AiProjectAnalyzer {
+interface DeepProjectAnalyzer  {
     // 1. Быстрый обзор: импорты + сигнатуры (то, что у тебя уже есть)
     // Позволяет AI понять "что тут вообще есть"
     fun getFileOutline(psiFile: PsiFile): FileSummary
