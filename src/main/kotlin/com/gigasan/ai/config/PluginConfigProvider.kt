@@ -13,30 +13,30 @@ import com.intellij.openapi.project.Project
 
 interface PluginConfigProvider {
 
-    // local
-    fun buildChatSystem(): String
-    fun buildSelectWholeLone(): Boolean
+    fun buildChatInstruction(): String
+    fun buildSelectEntireLines(): Boolean
     fun buildUseSoftWrap(): Boolean
+    fun buildInstruction(): String
 
     // endpoint
-    fun buildBackend(): BackendEndpoint
+    fun buildBackendEndpoint(): BackendEndpoint
     fun buildEndpointSetting(): EndpointSettings
-    fun buildUrl(): String
+
+    fun buildBaseUrl(): String
+    fun buildModelListEndpoint(): String
     fun buildChatEndpoint(): String
     fun buildChatModel(): String
     fun buildApiKey(): String
     fun buildMaxTokenLimit(): Long
     fun buildKeepAlive(): Int
     fun buildTemperature(): Float
+    fun buildLogprobs(): Boolean
+    fun buildTopLogprobs(): Int
     fun buildMaxContext(): Long
     fun buildStream(): Boolean
     fun buildReasoning(): String?
-    fun buildSystem(): String
-    fun buildInstruction(): String
     fun buildRequestBody(prompt: String): JsonObject
     fun buildExtraParams(prompt: String): JsonObject
-
-
 }
 
 @Service(Service.Level.PROJECT) // Без регистрации в plugin.xml!
@@ -44,57 +44,54 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
     private val global = PluginSettingsService.instance
     private val local = ProjectSettingsService.getInstance(project).state
 
-    override fun buildChatSystem(): String {
-        return local.chatSystemPrompt
+    private val defaultAllowedEndpoint = BackendEndpoint.LM_STUDIO_ENDPOINT
+
+    override fun buildBackendEndpoint(): BackendEndpoint {
+        val preferred = local.backendEndpoint
+        return if (preferred.isAllowedIn(global)) preferred else defaultAllowedEndpoint
     }
-    override fun buildSelectWholeLone(): Boolean {
+
+    override fun buildEndpointSetting(): EndpointSettings {
+        val preferred = local.backendEndpoint
+        return if (preferred.isAllowedIn(global)) global.getSettingsFor(preferred)
+        // Fallback to default settings for allowed backend, or LM Studio's settings as safe default
+        else global.getSettingsFor(defaultAllowedEndpoint)
+    }
+
+    override fun buildChatInstruction(): String {
+        return local.chatInstruction
+    }
+    override fun buildSelectEntireLines(): Boolean {
         return local.selectEntireLines
     }
     override fun buildUseSoftWrap(): Boolean {
         return local.useSoftWrap
     }
 
-    /**
-     * Формирует URL в зависимости от baseUrl и chatEndpointIndex.
-     */
+    override fun buildInstruction(): String {
+        return InstructionsService.instance.state.selectedInstruction
+    }
+
+    override fun buildBaseUrl(): String {
+        return buildEndpointSetting().baseUrl.trim()
+    }
+    override fun buildModelListEndpoint(): String {
+        return buildEndpointSetting().modelListEndpointUrl.trim()
+    }
     override fun buildChatEndpoint(): String {
         return buildEndpointSetting().chatEndpointUrl.trim()
     }
-
-    override fun buildUrl(): String {
-        return buildEndpointSetting().baseUrl.trim()
-    }
-
     override fun buildApiKey(): String {
         return buildEndpointSetting().apiKey.trim()
     }
-
-    override fun buildMaxTokenLimit(): Long {
-        return buildEndpointSetting().maxTokenLimit
-    }
-
-    override fun buildKeepAlive(): Int {
-        return buildEndpointSetting().keep_alive
-    }
-
-    override fun buildTemperature(): Float {
-        return buildEndpointSetting().temperature
-    }
-
     override fun buildMaxContext(): Long {
         return buildEndpointSetting().maxContext
     }
-
-    override fun buildChatModel(): String {
-        return buildEndpointSetting().selectedModelKey
+    override fun buildMaxTokenLimit(): Long {
+        return buildEndpointSetting().maxTokenLimit
     }
-
-    override fun buildStream(): Boolean {
-        return buildEndpointSetting().stream
-    }
-
     override fun buildReasoning(): String? {
-        val modelCache: ModelCache = ModelCacheService.instance.getSettingsFor(buildBackend())
+        val modelCache: ModelCache = ModelCacheService.instance.getSettingsFor(buildBackendEndpoint())
         val model = modelCache.models.find { model ->
             model.key == buildEndpointSetting().selectedModelKey
         }
@@ -107,61 +104,25 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
         }
         return null
     }
-
-
-
-
-    override fun buildSystem(): String {
-        return buildEndpointSetting().system
+    override fun buildStream(): Boolean {
+        return buildEndpointSetting().stream
+    }
+    override fun buildTemperature(): Float {
+        return buildEndpointSetting().temperature
+    }
+    override fun buildLogprobs(): Boolean {
+        return buildEndpointSetting().logprobs
+    }
+    override fun buildTopLogprobs(): Int {
+        return buildEndpointSetting().top_logprobs
+    }
+    override fun buildKeepAlive(): Int {
+        return buildEndpointSetting().keep_alive
+    }
+    override fun buildChatModel(): String {
+        return buildEndpointSetting().selectedModelKey
     }
 
-    override fun buildInstruction(): String {
-        return InstructionsService.instance.state.selectedInstruction
-    }
-
-    override fun buildBackend(): BackendEndpoint {
-        // 1. Декодируем то, что сохранено в проекте
-        //val preferred = BackendEndpoint.fromId(local.backendEngineId, local.backendApiId)?:BackendEndpoint.LM_STUDIO_ENDPOINT
-        val preferred = local.backendEndpoint
-        // 2. Проверяем, разрешен ли этот тип глобально
-        val isAllowed = when (preferred) {
-            BackendEndpoint.LM_STUDIO_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.LM_STUDIO_OPENAI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.LM_STUDIO_ANTHROPIC_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.OLLAMA_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.OLLAMA_OPENAI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.OLLAMA_ANTHROPIC_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.OPEN_AI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.CLAUDE_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            else -> false
-        }
-
-        // 3. Если разрешен — отдаем, если нет — отдаем безопасный дефолт
-        return if (isAllowed) preferred else BackendEndpoint.LM_STUDIO_ENDPOINT
-    }
-
-    override fun buildEndpointSetting(): EndpointSettings {
-        // 1. Декодируем то, что сохранено в проекте
-        //val preferred = BackendEndpoint.fromId(local.backendEngineId, local.backendApiId)?:BackendEndpoint.LM_STUDIO_ENDPOINT
-        val preferred = local.backendEndpoint
-
-        // 2. Проверяем, разрешен ли этот тип глобально
-        val isAllowed = when (preferred) {
-            BackendEndpoint.LM_STUDIO_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.LM_STUDIO_OPENAI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.LM_STUDIO_ANTHROPIC_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.OLLAMA_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.OLLAMA_OPENAI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.OLLAMA_ANTHROPIC_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.OPEN_AI_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            BackendEndpoint.CLAUDE_ENDPOINT -> global.state.allowedBackendEndpoints.contains(preferred)
-            else -> false
-        }
-
-        // 3. Если разрешен — отдаем, если нет — отдаем безопасный д
-         return if (isAllowed) global.getSettingsFor(local.backendEndpoint) else global.getSettingsFor(BackendEndpoint.LM_STUDIO_ENDPOINT)
-        //return if (isAllowed) preferred else BackendEndpoint.LM_STUDIO_ENDPOINT
-    }
     /**
      * Формирует тело запроса в зависимости от endpointIndex.
      * Логика requestBody вынесена сюда, чтобы не дублировать в двух функциях.

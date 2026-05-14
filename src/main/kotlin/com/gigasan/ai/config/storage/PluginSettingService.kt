@@ -65,29 +65,6 @@ class PluginSettingsService : PersistentStateComponent<PluginSettingsService.Sta
         return myState.settingsMap.getOrPut(endpoint) { EndpointSettings() }
     }
 
-    // Вспомогательный граф
-    private val graph: PropertyGraph = PropertyGraph("PluginSettingsService")
-
-    // Создаём observable свойства по требованию
-    fun getSystemProperty(endpoint: BackendEndpoint): GraphProperty<String> {
-        val settings = myState.settingsMap.getOrPut(endpoint) { EndpointSettings() }
-        return graph.property(settings.system)
-            .also { prop ->
-                prop.afterChange { newValue ->
-                    settings.system = newValue
-                }
-            }
-    }
-
-//    var endpointSettings: Map<EndpointKey, EndpointSettings> = mutableMapOf(),
-//    var modelCache: List<ModelCache> = mutableListOf(),
-
-
-    // 3. Для удобства доступа из Configurable можно добавить публичное свойство
-    // но с другим именем, либо использовать методы getState()
-    val allSettings: State get() = myState
-
-
     private val listeners = mutableListOf<() -> Unit>()
 
     fun addChangeListener(listener: () -> Unit) {
@@ -130,8 +107,8 @@ data class EndpointSettings(
     // model
     var selectedModelName: String = "",
     var selectedModelKey: String = "",
+    //   |
     //   V
-    var system: String = "",
     var maxContext: Long = 16384,
     var maxTokenLimit: Long = 16000,
     var reasoning: String = "",

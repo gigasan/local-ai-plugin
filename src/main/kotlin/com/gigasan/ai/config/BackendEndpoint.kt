@@ -2,6 +2,7 @@ package com.gigasan.ai.config
 
 import com.gigasan.ai.config.BackendEngine.*
 import com.gigasan.ai.config.BackendApi.*
+import com.gigasan.ai.config.storage.PluginSettingsService
 
 
 enum class BackendEndpoint(val engine: BackendEngine, val api: BackendApi) {
@@ -153,3 +154,7 @@ enum class BackendEndpoint(val engine: BackendEngine, val api: BackendApi) {
         fun fromId(engineId: Int, apiId: Int) = BackendEndpoint.entries.find { it.engine.id == engineId && it.api.id == apiId }
     }
 }
+
+// Extension property or method inside BackendEndpoint.kt:
+fun BackendEndpoint.isAllowedIn(globalState: PluginSettingsService): Boolean =
+    globalState.getState().allowedBackendEndpoints.contains(this)

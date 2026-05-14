@@ -8,7 +8,6 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.util.xmlb.annotations.Tag
 
 // 1. Указываем имя файла, в котором будут лежать настройки (в папке конфигов IDE)
 @State(name = "com.gigasan.localai.config.ProjectSettingsService", storages = [Storage("ProjectSettingsService.xml")])
@@ -20,6 +19,14 @@ class ProjectSettingsService(private val project: Project) : PersistentStateComp
         // connection
         var backendEndpoint: BackendEndpoint = BackendEndpoint.LM_STUDIO_ENDPOINT,
 
+        // task compositor and chat
+        var chatInstruction: String = "",
+        var selectEntireLines: Boolean = true,
+        var useSoftWrap: Boolean = true,
+        var closeAfterSent: Boolean = true,
+        var fontName: String = "JetBrains Mono",
+        var fontSize: Int = 13,
+
         // panel states
         var connectionExpanded: Boolean = true,
         var modelSelectionExpanded: Boolean = true,
@@ -28,20 +35,9 @@ class ProjectSettingsService(private val project: Project) : PersistentStateComp
         var chatExpanded: Boolean = true,
         var advancedExpanded: Boolean = true,
 
-        // chat system prompt
-        var chatSystemPrompt: String = "",
-
-        var closeAfterSent: Boolean = true,
-        var selectEntireLines: Boolean = true,
-        var useSoftWrap: Boolean = true,
-        var fontName: String = "JetBrains Mono",
-        var fontSize: Int = 13,
-
-
         // Карта для хранения любых доп. параметров: "temperature" -> "0.7", "top_p" -> "0.9"
         var extraParameters: MutableMap<String, String> = mutableMapOf(),
         var customParams: MutableMap<String, String> = mutableMapOf(),
-
         )
 
     var myState = State() // Доступ к полям будет через settings.state.baseUrl

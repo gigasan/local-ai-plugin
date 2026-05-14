@@ -143,7 +143,7 @@ class TaskCompositorDialog(
                 editor.contentComponent.border = JBUI.Borders.emptyLeft(6)
                 editor.settings.isLineNumbersShown = false
                 editor.settings.isCaretRowShown = true
-                editor.settings.isUseSoftWraps = false
+                editor.settings.isUseSoftWraps = true
                 editor.colorsScheme.editorFontName = ProjectSettingsService.getInstance(project).state.fontName
                 editor.colorsScheme.editorFontSize = ProjectSettingsService.getInstance(project).state.fontSize
                 editor.settings.setTabSize(4)

@@ -4,9 +4,11 @@ import com.gigasan.ai.actions.AnalyzeAction
 import com.gigasan.ai.actions.AskAction
 import com.gigasan.ai.actions.AutoSearchToggleAction
 import com.gigasan.ai.actions.CleanChatAction
+import com.gigasan.ai.actions.LoadResponseAction
 import com.gigasan.ai.actions.RefactorAction
 import com.gigasan.ai.actions.SendFileAction
 import com.gigasan.ai.actions.TaskCompositorAction
+import com.gigasan.ai.config.DefaultChatConfigProvider
 import com.gigasan.ai.config.PluginConfigProvider
 import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.core.wrapCode
@@ -17,6 +19,7 @@ import com.gigasan.ai.runtime.ChatRequestBuilder
 import com.gigasan.ai.runtime.HttpClientProvider
 import com.gigasan.ai.runtime.LocalAIService
 import com.gigasan.ai.runtime.MemorySystem
+import com.gigasan.ai.runtime.ResultBuilder
 import com.gigasan.ai.runtime.StateMachine
 import com.gigasan.ai.runtime.StateManager
 import com.gigasan.ai.runtime.StreamEvent
@@ -76,6 +79,7 @@ import java.awt.event.ComponentEvent
 import java.awt.event.ComponentAdapter
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.progress.EmptyProgressIndicator
 
 //sealed class ChatBlock {
 //    data class Text(val value: String): ChatBlock()
@@ -160,6 +164,21 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             return task
         }
 
+        fun buildTaskFromResponse(response: String): TaskData {
+            val task = TaskData(
+                id = System.currentTimeMillis().toString(),
+                title = "\uD83D\uDCBE",
+                zoneType = "File",
+                status = TaskStatus.UNKNOWN,
+                footer = "",
+                instruction = "",
+                question = "",
+                reasoning = "",
+                answer = response,
+                )
+            return task
+        }
+
 
         var instance: ChatPanel? = null
 
@@ -179,6 +198,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         if (settings.state.enableDebugFeature) {
             mainGroup.add(AskAction())
+            mainGroup.add(LoadResponseAction())
         }
         if (settings.state.enableFileTransfer) {
             mainGroup.add(SendFileAction())
@@ -689,7 +709,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
 
     fun sendTask(task: TaskData) {
-        val url = provider.buildUrl() + provider.buildChatEndpoint()
+        val url = provider.buildBaseUrl() + provider.buildChatEndpoint()
         val model = provider.buildChatModel()
 
         val clientOk = HttpClientProvider.client
@@ -983,6 +1003,66 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         }
     }
 
+    fun renderResponseMessage(response: String) {
+        val task = buildTaskFromResponse(response)
+        taskManagerPanel.addTask(task)
+        updateTaskStatus(task, TaskStatus.DONE)
+        val indicator = EmptyProgressIndicator()
+        val adapter = BackendAdapter(project)
+        val chatContext = ChatRequestBuilder(project)
+            .system(task.instruction)
+            .memory(limit = 5)
+            .user(task.question)
+            .stream(provider.buildStream())
+            .model(provider.buildChatModel())
+            .maxTokens(provider.buildMaxTokenLimit())
+            .build(task)
+        val stateManager = StateManager()
+        val stateMachine = StateMachine()
+        val context = adapter.getContext(chatContext, stateManager, stateMachine)
+        val builder = ResultBuilder(context.parser)
+        builder.setRaw(response)
+        val result = builder.build()
+
+        val updated = task.copy(
+            title = when (result) {
+                is ResponseResult.Success -> {
+                    "✔\uFE0F${task.title}"
+                }
+                is ResponseResult.Error -> {
+                    "❌${task.title}"
+                }
+            },
+            answer = when (result) {
+                is ResponseResult.Success -> {
+                    result.text
+                }
+                is ResponseResult.Error -> {
+                    result.message
+                }
+            },
+
+            footer = AIMetrics.buildFooter(
+                usage = if (result is ResponseResult.Success) { result.usage} else {null},
+                durationMs = result.durationMs
+            ),
+
+            reasoning = if (result is ResponseResult.Success) { result.reasoning?.trim()?:""} else {""},
+
+            status = when (result) {
+                is ResponseResult.Success -> {
+                    TaskStatus.DONE
+                }
+                is ResponseResult.Error -> {
+                    TaskStatus.ERROR
+                }
+            },
+        )
+
+        val teskResult = TaskResult.Success(updated)
+        updateTaskOnUI(updated)
+    }
+
     fun Color.toHex() = "#%02x%02x%02x".format(red, green, blue)
 
     object MarkdownRenderer {
@@ -995,16 +1075,10 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
                 override fun apply(context: LinkResolverContext): AttributeProvider {
                     return AttributeProvider { node, part, attributes ->
-                        //println("node=${node};part=${part};attributes=${attributes}")
-                        //if (node is FencedCodeBlock) {
                         if (node is FencedCodeBlock && part == AttributablePart.NODE) {
                             val lang = node.info.toString().trim()
                             if (lang.isNotEmpty()) {
                                 attributes.addValue("class", "language-$lang")
-//                                val html = """<div class="code-block"><div class="code-header"><span>$lang</span>
-//                                <button onclick="toggleCode(this)">collapse</button><button onclick="copyCode(this)">copy</button>
-//                                </div><pre><code class="language-$lang">${node.contentChars}</code></pre></div>""".trimIndent()
-//                                attributes.addValue("data-html", html)
                             }
                         }
                     }
@@ -1283,6 +1357,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             
                 /* 3. БЛОКИ КОДА (Интеграция с Prism.js) */
                 
+                .code-block pre {
+                    display: block; /* или whatever по умолчанию */
+                }
+                
+                .code-block.closed pre {
+                    display: none;
+                }
+                
                 /* Обертка для кнопок (Copy/Collapse) */
                 .code-header {
                     display: flex;
@@ -1410,10 +1492,10 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 
                 .footer {
                     padding-top: 8px;
-                    font-size: 10px;
+                    font-size: 11px;
                     font-family: monospace;
-                    font-weight: 600;
-                    color: #604E29;
+                    font-weight: 800;
+                    color: #FFEB3B;
                 }
             
                 /* Утилиты */
@@ -1453,16 +1535,17 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             </script>
             <script>
                 function toggleCode(button) {
-                    // Находим блок кода в том же контейнере, где и кнопка
                     const container = button.closest('.code-block');
-                    const pre = container ? container.querySelector('pre') : button.parentElement.nextElementSibling;
-                    
-                    if (pre.style.display === 'none') {
-                        pre.style.display = 'block';
-                        button.innerText = 'collapse';
-                    } else {
-                        pre.style.display = 'none';
+                    const isOpened = !container.classList.contains('closed');
+                
+                    if (isOpened) {
+                        // закрыть
+                        container.classList.add('closed');
                         button.innerText = 'expand';
+                    } else {
+                        // открыть
+                        container.classList.remove('closed');
+                        button.innerText = 'collapse';
                     }
                 }
             </script>

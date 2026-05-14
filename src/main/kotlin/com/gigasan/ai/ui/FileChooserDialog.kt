@@ -874,9 +874,6 @@ class FileChooserDialog(
     override fun doOKAction() {
         super.doOKAction()
         logger.info("doOKAction performed")
-        //ChatPanel.instance?.sendExternalMessage(codeTextField.text, taskField.text)
-        //wrapCodeBlock(taskField.text, codeTextField.text, language)
-        //)
     }
 
     override fun doCancelAction() {

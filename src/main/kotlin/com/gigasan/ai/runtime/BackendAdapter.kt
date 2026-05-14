@@ -30,12 +30,12 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
     val responseParser = ResponseParser(project)
 
     fun getContext(ctx: ChatContext, stateManager: StateManager, stateMachine: StateMachine): ExecutionContext {
-        val baseUrl = provider.buildUrl()
+        val baseUrl = provider.buildBaseUrl()
         val endpoint = provider.buildChatEndpoint()
         val apiKey = provider.buildApiKey()
 
         // Определяем, какой адаптер использовать
-        val (request, parser) = when (val backend = provider.buildBackend().api to endpoint) {
+        val (request, parser) = when (val backend = provider.buildBackendEndpoint().api to endpoint) {
             BackendApi.LM_STUDIO_API to "/api/v1/chat" ->
                 LmStudioAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
 
@@ -64,10 +64,10 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
     }
 
     fun toRequest(ctx: ChatContext): Request {
-        val baseUrl = provider.buildUrl()
+        val baseUrl = provider.buildBaseUrl()
         val endpoint = provider.buildChatEndpoint()
         val apiKey = provider.buildApiKey()
-        val backend = provider.buildBackend()
+        val backend = provider.buildBackendEndpoint()
 
         logger.warn("BackendAdapter backend=$backend endpoint=$endpoint")
 
@@ -85,10 +85,10 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
         stateManager: StateManager,
         stateMachine: StateMachine
     ): Pair<Request, StreamResponseProcessor> {
-        val baseUrl = provider.buildUrl()
+        val baseUrl = provider.buildBaseUrl()
         val endpoint = provider.buildChatEndpoint()
         val apiKey = provider.buildApiKey()
-        val backend = provider.buildBackend()
+        val backend = provider.buildBackendEndpoint()
 
         // Создаем процессор по умолчанию (OpenAI style)
         val defaultProcessor = DefaultStreamProcessor(project, stateManager, stateMachine, sseParser, streamParser)

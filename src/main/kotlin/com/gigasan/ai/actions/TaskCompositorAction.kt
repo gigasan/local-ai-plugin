@@ -35,5 +35,5 @@ class TaskCompositorAction : AnAction("TaskCompositorDialog", "Open TaskComposit
         e.presentation.description = if (modelName.isBlank()) "Select a model first" else "Open compositor for $modelName"
     }
 
-    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 }

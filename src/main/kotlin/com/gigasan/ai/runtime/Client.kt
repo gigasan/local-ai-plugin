@@ -25,10 +25,10 @@ class Client(private val project: Project) {
     private val responseParser by lazy  { ResponseParser(project) }
 
     fun send(ctx: ChatContext): ResponseResult {
-        val baseUrl = provider.buildUrl()
+        val baseUrl = provider.buildBaseUrl()
         val endpoint = provider.buildChatEndpoint()
         val apiKey = provider.buildApiKey()
-        val backend = provider.buildBackend()
+        val backend = provider.buildBackendEndpoint()
         logger.warn("endpoint: $endpoint, apiKey: $apiKey, backend: ${backend::class.simpleName}")
         val (request, parser) = when (backend.api to endpoint) {
             BackendApi.LM_STUDIO_API to "/api/v1/chat" -> LmStudioAdapter.toRequest(project, ctx, baseUrl+endpoint, apiKey) to responseParser::parse
