@@ -172,8 +172,6 @@ class ModelParser(project: Project) {
         )
     }
 
-
-
     fun parseModels(jsonString: String, apiId: Int): List<Model> {
         val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
 

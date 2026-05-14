@@ -141,7 +141,7 @@ class LocalAIService(private val project: Project) {
 
         return try {
 
-            val chatFull = provider.buildUrl() + provider.buildChatEndpoint()
+            val chatFull = provider.buildBaseUrl() + provider.buildChatEndpoint()
             val requestBody = provider.buildRequestBody(prompt)
 
             val url = URI.create(chatFull).toURL()

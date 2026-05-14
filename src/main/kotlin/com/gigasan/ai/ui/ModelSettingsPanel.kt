@@ -82,14 +82,6 @@ data class ModelSettingsPanel(
                     }.align(AlignX.RIGHT)
                 }
 
-                row("System:") {
-                    textField()
-                        .resizableColumn().align(AlignX.FILL)
-                        .bindText(
-                            getter = { components.endpointSettings.system },
-                            setter = { text -> components.endpointSettings.system = text }
-                        )
-                }.visible(false)
                 row() {
                     label("Max context:")
                     textField()
@@ -148,25 +140,25 @@ data class ModelSettingsPanel(
                                 components.endpointSettings.temperature = (newValue / 10.0f)
                             }
                         )
-
                     checkBox("Stream")
                         .bindSelected(
                             getter = { components.endpointSettings.stream },
                             setter = { value: Boolean -> components.endpointSettings.stream = value }
                         )
-//                    val cb = checkBox("Logprobs")
-//                        .bindSelected(
-//                            getter = { components.endpointSettings.logprobs },
-//                            setter = { value: Boolean -> components.endpointSettings.logprobs = value }
-//                        )
-//                    label("Top logprobs:")
-//                        .visibleIf(cb.selected)
-//                    intTextField()
-//                        .bindIntText(
-//                            getter = { components.endpointSettings.top_logprobs },
-//                            setter = { value: Int -> components.endpointSettings.top_logprobs = value }
-//                        )
-//                        .visibleIf(cb.selected)
+                    val lcb = checkBox("Logprobs")
+                        .bindSelected(
+                            getter = { components.endpointSettings.logprobs },
+                            setter = { value: Boolean -> components.endpointSettings.logprobs = value }
+                        )
+                        .visible(false)
+                    label("Top logprobs:")
+                        .visibleIf(lcb.selected)
+                    intTextField()
+                        .bindIntText(
+                            getter = { components.endpointSettings.top_logprobs },
+                            setter = { value: Int -> components.endpointSettings.top_logprobs = value }
+                        )
+                        .visibleIf(lcb.selected)
                 }.layout(RowLayout.LABEL_ALIGNED)
 
                 // Сразу после создания панели инициализируем состояние для текущей модели

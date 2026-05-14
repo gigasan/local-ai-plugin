@@ -16,41 +16,6 @@ object HtmlProcessor {
         return dateTime.format(formatter)
     }
 
-    fun wrapCodeBlock(htmlCode: String): String {
-        // Извлекаем язык из класса (например, language-python)
-        val languageRegex = """language-(\w+)""".toRegex()
-        val matchResult = languageRegex.find(htmlCode)
-        val language = matchResult?.groupValues?.get(1) ?: "text"
-
-        // Извлекаем содержимое внутри <code>...</code>
-        val codeContentRegex = """<code[^>]*>(.*?)</code>""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        val codeMatch = codeContentRegex.find(htmlCode)
-
-        val rawCode = codeMatch?.groupValues?.get(1)?.trim() ?: ""
-
-        // Экранируем HTML-символы в коде (чтобы &quot; и т.д. превратились обратно в " и т.п.)
-        val decodedCode = rawCode
-            .replace("&quot;", "\"")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&apos;", "'")
-
-        // Формируем итоговый HTML по нужному шаблону
-        return """
-        <div class="code-block">
-            <div class="code-header">
-                <span>$language</span>
-                <button onclick="toggleCode(this)">collapse</button>
-                <button onclick="copyCode(this)">copy</button>
-            </div>
-            
-            <pre><code class="language-$language">$decodedCode</code></pre>
-        </div>
-    """.trimIndent()
-    }
-
-
     fun transformCodeBlocks(html: String): String {
         // Регулярное выражение находит блоки точно в формате, который вы указали.
         // Поддерживает пробелы/переносы строк между тегами <pre> и <code>,
@@ -60,18 +25,17 @@ object HtmlProcessor {
         return regex.replace(html) { matchResult ->
             val language = matchResult.groupValues[1]   // например, "python"
             val codeContent = matchResult.groupValues[2] // весь код внутри <code>...</code>
-
             """
-<div class="code-block">
- <div class="code-header">
- <span>$language</span>
- <button onclick="toggleCode(this)">collapse</button>
- <button onclick="copyCode(this)">copy</button>
- </div>
+            <div class="code-block closed">
+             <div class="code-header">
+             <span>$language</span>
+             <button onclick="toggleCode(this)">expand</button>
+             <button onclick="copyCode(this)">copy</button>
+             </div>
 
- <pre><code class="language-$language">$codeContent</code></pre>
-</div>
-""".trimIndent()
+             <pre><code class="language-$language">$codeContent</code></pre>
+            </div>
+            """.trimIndent()
         }
     }
 

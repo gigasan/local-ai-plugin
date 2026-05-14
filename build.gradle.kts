@@ -26,8 +26,6 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:3.0.1")
     implementation("io.ktor:ktor-client-content-negotiation:3.0.1")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.1")
-    implementation("com.aallam.openai:openai-client:4.1.0")
-    implementation("com.anthropic:anthropic-java-client-okhttp:2.27.0") // Verify latest version
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3") // Kotlin Coroutines for async API calls
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")

@@ -2,7 +2,6 @@ package com.gigasan.ai.config
 
 import com.gigasan.ai.config.storage.EndpointSettings
 import com.gigasan.ai.config.storage.InstructionsService
-import com.gigasan.ai.config.storage.Model
 import com.gigasan.ai.config.storage.ModelCache
 import com.gigasan.ai.config.storage.ModelCacheService
 import com.gigasan.ai.config.storage.PluginSettingsService
@@ -24,7 +23,6 @@ import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
 import com.intellij.util.ui.FontInfo
 import com.intellij.util.ui.JBUI
 import okhttp3.internal.toLongOrDefault
-import javax.swing.JCheckBox
 
 class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Local AI Settings"), JsonFileLogger {
     private val logger = Logger.getInstance("PluginSettingsConfigurable")
@@ -267,10 +265,10 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                         .resizableColumn().align(AlignX.FILL)
                         .bindItem(
                             getter = {
-                                projectSettingsService.state.chatSystemPrompt
+                                projectSettingsService.state.chatInstruction
                             },
                             setter = { chatInstruction ->
-                                projectSettingsService.state.chatSystemPrompt = chatInstruction.orEmpty()
+                                projectSettingsService.state.chatInstruction = chatInstruction.orEmpty()
                             }
                         )
                         .component

@@ -18,7 +18,8 @@ enum class TaskStatus {
     SENT,
     RUNNING,
     DONE,
-    ERROR
+    ERROR,
+    UNKNOWN,
 }
 
 data class TaskData(
