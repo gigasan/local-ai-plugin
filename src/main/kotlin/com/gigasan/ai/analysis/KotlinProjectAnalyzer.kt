@@ -1,7 +1,7 @@
 package com.gigasan.ai.analysis
 
 import com.gigasan.ai.core.toHumanReadableSize
-import com.gigasan.ai.core.wrapCode
+import com.gigasan.ai.ui.chat.HtmlProcessor.wrapCode
 import com.intellij.codeInsight.generation.MemberChooserObject
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.diagnostic.Logger

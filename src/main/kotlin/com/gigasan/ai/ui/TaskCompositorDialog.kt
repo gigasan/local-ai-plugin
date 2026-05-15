@@ -10,9 +10,9 @@ import com.gigasan.ai.config.storage.ModelCacheService
 import com.gigasan.ai.config.storage.TaskSequence
 import com.gigasan.ai.core.TokenCalculator
 import com.gigasan.ai.core.countWords
-import com.gigasan.ai.core.wrapCode
-import com.gigasan.ai.core.wrapData
 import com.gigasan.ai.ui.chat.ChatPanel
+import com.gigasan.ai.ui.chat.HtmlProcessor.wrapCode
+import com.gigasan.ai.ui.chat.HtmlProcessor.wrapData
 import com.google.gson.GsonBuilder
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
@@ -75,6 +75,7 @@ class TaskCompositorDialog(
     lateinit var statsLabel: JLabel
     lateinit var globalStatsLabel: JLabel
     lateinit var includeProblemCheckBox: JBCheckBox
+    lateinit var includeItemNameCheckBox: JBCheckBox
     lateinit var wrapDataCheckBox: JBCheckBox
 
     // список (Левая часть)
@@ -211,7 +212,7 @@ class TaskCompositorDialog(
                     }
                     // 3. статистики токенов
                     statsLabel.text = getStats(descriptionField.document.text, editorField.document.text)
-                    globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected)
+                    globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
 
                     //updateTotalStats() // Обновляем вашу статус-строку
                     tasksList.repaint()
@@ -235,12 +236,9 @@ class TaskCompositorDialog(
                     }
                     // 3. статистики токенов
                     statsLabel.text = getStats(descriptionField.document.text, editorField.document.text)
-                    globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected)
+                    globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
                     tasksList.repaint()
                 }
-
-
-
             }
         })
 
@@ -404,7 +402,17 @@ class TaskCompositorDialog(
             }
             includeProblemCheckBox.addActionListener {
                 taskSequenceService.includeProblem = includeProblemCheckBox.isSelected
-                globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected)
+                globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
+            }
+
+            includeItemNameCheckBox = JBCheckBox("Include a Item's names").apply {
+                alignmentX = Component.RIGHT_ALIGNMENT
+                toolTipText = "Include item name if description field is empty"
+                isSelected = taskSequenceService.includeItemName
+            }
+            includeItemNameCheckBox.addActionListener {
+                taskSequenceService.includeItemName = includeItemNameCheckBox.isSelected
+                globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
             }
 
             wrapDataCheckBox = JBCheckBox("Wrap DATA block").apply {
@@ -415,15 +423,16 @@ class TaskCompositorDialog(
             wrapDataCheckBox.addActionListener {
                 taskSequenceService.wrapDataBlock = wrapDataCheckBox.isSelected
                 statsLabel.text = getStats(descriptionField.document.text, editorField.document.text)
-                globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected)
+                globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
             }
-            globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected)
+            globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
 
             val rightContainer = JPanel(FlowLayout(FlowLayout.RIGHT, 5, 0)).apply {
                 // Убираем лишние отступы, чтобы панель не "раздувалась"
                 isOpaque = false
-                add(includeProblemCheckBox)  // Первый элемент справа
-                add(wrapDataCheckBox) // Второй элемент справа
+                add(includeProblemCheckBox)
+                add(includeItemNameCheckBox)
+                add(wrapDataCheckBox)
             }
 
             add(rightContainer, BorderLayout.EAST)
@@ -625,7 +634,7 @@ class TaskCompositorDialog(
 
     private fun updateTotalStats() {
         statsLabel.text = getStats(descriptionField.document.text, editorField.document.text)
-        globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected)
+        globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
     }
 
     private fun updateDetails(detailsPanel: JBPanel<JBPanel<*>>, selected: WorkItem?) {
@@ -645,7 +654,7 @@ class TaskCompositorDialog(
                 descriptionField.document.setText(selected.description)
                 editorField.document.setText(selected.text)
                 statsLabel.text = getStats(descriptionField.document.text, editorField.document.text)
-                globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected)
+                globalStatsLabel.text = getTaskStats(descriptionField.document.text, editorField.document.text, includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
             }
         } finally {
             isUpdating = false
@@ -662,7 +671,7 @@ class TaskCompositorDialog(
         }
         return items
     }
-    fun getProblem(includeProblem: Boolean, wrapDataBlock: Boolean): String {
+    fun getProblem(includeProblem: Boolean, wrapDataBlock: Boolean, includeItemName: Boolean): String {
         val text = StringBuilder()
 
         if (includeProblem) {
@@ -673,7 +682,9 @@ class TaskCompositorDialog(
 
         items.forEach {
             if (it.description.isNotBlank()) {
-                text.append(it.description).append("\n")
+                text.append(it.description).append("\n\n")
+            } else if (includeItemName) {
+                text.append(it.name).append("\n\n")
             }
             if (it.text.isNotBlank()) {
                 if (wrapDataBlock) {
@@ -704,8 +715,8 @@ class TaskCompositorDialog(
         return "Item stats = Bytes: $bytes | Words: $words | Tokens: $tokens"
     }
 
-    fun getTaskStats(desc: String, code: String, includeProblem: Boolean, wrapData: Boolean): String {
-        val text = getInstruction() + getProblem(includeProblem, wrapData)
+    fun getTaskStats(desc: String, code: String, includeProblem: Boolean, wrapData: Boolean, includeItemName: Boolean): String {
+        val text = getInstruction() + getProblem(includeProblem, wrapData, includeItemName)
         val bytes = text.length
         val words = countWords(text)
         val tokens = TokenCalculator.countTokens(text)
@@ -716,7 +727,7 @@ class TaskCompositorDialog(
         val sendAction = object : AbstractAction("Send To AI") {
             override fun actionPerformed(e: ActionEvent) {
                 val instruction = getInstruction()
-                val problem = getProblem(includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected)
+                val problem = getProblem(includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
                 ChatPanel.instance?.sendInstructionQuestionTask(instruction, problem)
 
                 if (projectSettings.closeAfterSent) {

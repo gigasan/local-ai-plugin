@@ -3,7 +3,7 @@ package com.gigasan.ai.analysis
 import com.gigasan.ai.analysis.RustCodeDatabase
 import com.gigasan.ai.core.toHumanReadableSize
 import com.gigasan.ai.core.toIntRange
-import com.gigasan.ai.core.wrapCode
+import com.gigasan.ai.ui.chat.HtmlProcessor.wrapCode
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.codeInsight.generation.ClassMember

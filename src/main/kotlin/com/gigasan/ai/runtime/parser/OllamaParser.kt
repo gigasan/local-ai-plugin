@@ -101,6 +101,7 @@ class OllamaParser(val project: Project) {
         val parsed = try {
             json.decodeFromString<OllamaResponse>(raw)
         } catch (e: Exception) {
+            logger.warn("JSON parse error: $e")
             return ResponseResult.Error("JSON parse error: ${e.message}", ErrorCategory.UNKNOWN, raw=raw)
         }
 

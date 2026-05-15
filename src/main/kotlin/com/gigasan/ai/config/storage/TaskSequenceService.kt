@@ -30,6 +30,7 @@ class TaskSequenceService : PersistentStateComponent<TaskSequence> {
 data class TaskSequence(
     var items: MutableList<WorkItem> = mutableListOf(),
     var includeProblem: Boolean = true,
+    var includeItemName: Boolean = true,
     var wrapDataBlock: Boolean = false,
 )
 

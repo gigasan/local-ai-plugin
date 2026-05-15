@@ -1,5 +1,6 @@
 package com.gigasan.ai.ui.chat
 
+import com.intellij.openapi.diagnostic.Logger
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.time.Instant
@@ -8,6 +9,8 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 object HtmlProcessor {
+
+    private val logger = Logger.getInstance(this::class.java.name)
 
     fun getFormatedTime(id: String): String {
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -40,14 +43,19 @@ object HtmlProcessor {
     }
 
     // Пример использования (полная программа):
-// Читает весь HTML из stdin и выводит преобразованный результат в stdout.
-// Можно запустить как обычный Kotlin-файл.
+    // Читает весь HTML из stdin и выводит преобразованный результат в stdout.
+    // Можно запустить как обычный Kotlin-файл.
     fun main() {
         val html = System.`in`.bufferedReader().use { it.readText() }
         val result = transformCodeBlocks(html)
         println(result)
     }
 
+    fun fixTableFormatting(input: String): String {
+        // Добавляем перенос строки перед первой чертой таблицы,
+        // если это похоже на начало заголовка
+        return input.replace(Regex("""(\w)\s*\|"""), "$1\n|")
+    }
 
     private fun cleanMarkdownHtml(rawHtml: String): String {
         var html = rawHtml
@@ -76,12 +84,82 @@ object HtmlProcessor {
         return html
     }
 
-    // Простая функция определения языка для class
-    private fun detectLanguage(code: String): String {
+    // Простая функция определения языка
+    fun detectLanguage(code: String): String {
+
+        val text = code.lowercase().trim()
+
         return when {
-            code.contains("fn main") || code.contains("println!") -> "rust"
-            code.contains("fun ") || code.contains("override fun") -> "kotlin"
-            code.contains("public class") || code.contains("System.out") -> "java"
+
+            // JSON
+            text.startsWith("{") &&
+                    text.endsWith("}") &&
+                    text.contains(":")
+                -> "json"
+
+            // Kotlin
+            (
+                    "fun " in text &&
+                            ("val " in text || "var " in text)
+                    ) ||
+                    "println(" in text
+                -> "kotlin"
+
+            // Java
+            "public static void main" in text ||
+                    "system.out.println" in text
+                -> "java"
+
+            // Python
+            Regex("""def\s+\w+\(""")
+                .containsMatchIn(text)
+                    ||
+                    "print(" in text &&
+                    ":" in text
+                -> "python"
+
+            // JavaScript
+            "console.log" in text ||
+                    "function " in text ||
+                    "document.queryselector" in text
+                -> "javascript"
+
+            // Bash
+            text.startsWith("#!/bin/bash") ||
+                    text.startsWith("#!/bin/sh") ||
+                    "sudo " in text ||
+                    "apt install" in text
+                -> "bash"
+
+            // Go
+            "package main" in text &&
+                    "func main()" in text
+                -> "go"
+
+            // Rust
+            "fn main()" in text ||
+                    "println!" in text
+                -> "rust"
+
+            // C
+            "#include <stdio.h>" in text
+                -> "c"
+
+            // C++
+            "#include <iostream>" in text ||
+                    "std::cout" in text
+                -> "cpp"
+
+            // Pascal
+            "begin" in text &&
+                    "end." in text
+                -> "pascal"
+
+            // Lisp
+            text.startsWith("(") &&
+                    ("defun" in text || "lambda" in text)
+                -> "lisp"
+
             else -> "plaintext"
         }
     }
@@ -111,6 +189,73 @@ object HtmlProcessor {
             </details>
         """.trimIndent()
     }
+
+
+    fun wrapCodeBlock(text: String, code: String, language: String?=null): String {
+        val lang = language?:"text"
+        val result = """
+        $text
+        ```$lang
+        $code
+        ```
+        """.trimIndent()
+        //logger.info("codeBlock: $result")
+        return result
+    }
+
+    val prismAlias = mapOf(
+        // TypeScript
+        "ts" to "typescript",
+        "typescript" to "typescript",
+
+        // JavaScript
+        "js" to "javascript",
+        "javascript" to "javascript",
+
+        // HTML
+        "html" to "markup",
+
+        // Bash
+        "sh" to "bash",
+        "shell" to "bash",
+
+        // C#
+        "c#" to "csharp",
+        "csharp" to "csharp",
+        "cs" to "csharp"
+    )
+
+    fun normalizeLanguage(lang: String?): String {
+        if (lang.isNullOrBlank()) return "plaintext"
+        return prismAlias[lang.lowercase()] ?: lang.lowercase()
+    }
+
+
+    fun wrapCode(code: String?, language: String? = null): String {
+        if (code.isNullOrBlank()) return ""
+
+        val detected = language ?: detectLanguage(code)
+
+        val prismLang = prismAlias[detected] ?: detected
+
+        //logger.info("wrapCode: Detected language: $prismLang")
+        val fence = if (code.contains("```")) "````" else "```"
+
+        /*
+            val lang = language
+                ?.takeIf { it.isNotBlank() }
+                ?.let { it }
+                ?: ""
+        */
+
+        return "$fence$prismLang\n$code\n$fence"
+    }
+
+    fun wrapData(block: String, begin: String = "===DATA===", end: String = "===DATA END==="): String {
+        if (block.isEmpty()) return ""
+        return "\n$begin\n\n$block\n\n$end\n"
+    }
+
 
 
 }

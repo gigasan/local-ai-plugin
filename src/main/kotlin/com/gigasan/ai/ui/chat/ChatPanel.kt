@@ -11,7 +11,6 @@ import com.gigasan.ai.actions.TaskCompositorAction
 import com.gigasan.ai.config.DefaultChatConfigProvider
 import com.gigasan.ai.config.PluginConfigProvider
 import com.gigasan.ai.config.storage.PluginSettingsService
-import com.gigasan.ai.core.wrapCode
 import com.gigasan.ai.runtime.ClientStream
 import com.gigasan.ai.runtime.AIMetrics
 import com.gigasan.ai.runtime.BackendAdapter
@@ -25,6 +24,7 @@ import com.gigasan.ai.runtime.StateManager
 import com.gigasan.ai.runtime.StreamEvent
 import com.gigasan.ai.runtime.parser.ResponseResult
 import com.gigasan.ai.runtime.parser.withDuration
+import com.gigasan.ai.ui.chat.HtmlProcessor.wrapCode
 import com.intellij.ide.ui.LafManagerListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
@@ -80,20 +80,9 @@ import java.awt.event.ComponentAdapter
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.progress.EmptyProgressIndicator
-
-//sealed class ChatBlock {
-//    data class Text(val value: String): ChatBlock()
-//    data class Reasoning(val value: String): ChatBlock()
-//    data class Tool(val name: String, val output: String): ChatBlock()
-//}
-
-// Блок Markdown
-//data class ChatBlock(
-//    val id: String,
-//    var content: String,
-//    var reasoning: String,
-//    var description: String,
-//)
+import com.intellij.ui.jcef.JBCefBrowserBase
+import com.vladsch.flexmark.ext.tables.TablesExtension
+import com.vladsch.flexmark.util.data.MutableDataSet
 
 class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true), Disposable {
     private val provider get() = project.service<PluginConfigProvider>()
@@ -115,9 +104,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private lateinit var searchPanel: JPanel   // ← теперь поле
     private var searchField: JTextField? = null
 
-//    private var animationStep = 0
-    //private val statusBarWidth = 30 // Желаемая ширина строки в символах
-    //private var lastUpdateMs = 0L
     private var marqueeOffset = 0L
     private var lastTextLength = 0
     private var lastAnimationMs = 0L
@@ -128,16 +114,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     private val sendButton = JButton("Send")
     private val taskManagerPanel = TaskManagerPanel()
     private val logger = Logger.getInstance("ChatPanel")
+    private val taskRenderer = TaskRenderer()
 
     companion object {
         fun buildTaskFromString(instruction: String, request: String): TaskData {
             val task = TaskData(
                 id = System.currentTimeMillis().toString(),
                 title = "♪",
-                //description = "chat message",
-                //content = text,
                 zoneType = "Chat",
-                //request = request,
                 answer = "",
                 status = TaskStatus.CREATED,
                 reasoning = "",
@@ -198,6 +182,8 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         if (settings.state.enableDebugFeature) {
             mainGroup.add(AskAction())
+        }
+        if (settings.state.enableDebugLog) {
             mainGroup.add(LoadResponseAction())
         }
         if (settings.state.enableFileTransfer) {
@@ -233,21 +219,12 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             mainGroup.add(devToolsAction)
         }
 
-        // 4. Добавляем стандартные экшены в конец
-//        mainGroup.addSeparator()
-//        val clearAction = actionManager.getAction("LocalAI.ClearChat")
-//        if (clearAction != null) {
-//            mainGroup.add(clearAction)
-//        }
-
         // 5. Создаем итоговый Toolbar
         val toolbar = actionManager.createActionToolbar(
             "ChatPanelToolbar",
             mainGroup,
             true // Горизонтальный
         )
-
-
 
         // Привязываем события к текущей панели
         toolbar.targetComponent = this
@@ -288,7 +265,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 val h = layeredPane.height
                 mainPanel.setBounds(0, 0, w, h)
                 updateSearchPanelPosition()
-                //searchPanel.setBounds(w - 240, 10, 220, 32)
             }
         })
 
@@ -400,10 +376,10 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         val w = layeredPane.width
         if (w > 320) {
             // Правый верхний угол с небольшим отступом
-            searchPanel.setBounds(w - 310, 10, 290, 38)
+            searchPanel.setBounds(w - 310, 0, 290, 38)
         } else {
             // fallback для очень узкого окна
-            searchPanel.setBounds(10, 10, 290, 38)
+            searchPanel.setBounds(10, 0, 290, 38)
         }
     }
 
@@ -510,7 +486,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         // Привязываем DropTarget к панели
         panel.dropTarget = dropTarget
     }
-
 
     fun createSearchPanel(browser: JBCefBrowser): JPanel {
         val panel = JPanel(BorderLayout(4, 0)).apply {
@@ -653,60 +628,9 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     // WorkItem -> ChatBlock
     fun rebuildChatBlocksFromTasks() {
         val tasks = taskManagerPanel.getAllTasks()
-        renderChatBlocks(tasks)
+        val html = taskRenderer.render(tasks)
+        jbCefBrowser.loadHTML(html)
     }
-
-    fun buildTaskHtml(task: TaskData): String {
-
-        val description = AIMetrics.buildDescription(
-            request = task.question,
-            content = "",
-            status = task.status,
-            maxLen = 100
-        )
-
-        val dataTaskId = "data-task-id='${task.id}'"
-
-        val htmlText = buildString {
-            append("<details>")
-            append("<summary class='chat-header' ${dataTaskId}>${task.title} ${description}</summary>\n")
-            append("<div class='chat-body'>")
-            append("<div class='chat'>")
-                if (task.question.isNotBlank()) {
-                    append("<div class='bubble-user'>")
-                    append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
-                    append(MarkdownRenderer.toHtml(task.question))
-                    append("</div>")
-                }
-                if (task.answer.isNotBlank() || task.reasoning.isNotBlank()) {
-                    append("<div class='bubble-assistant'>")
-                    append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
-                    if (task.reasoning.isNotBlank()) {
-                        append("<p>")
-                        append(HtmlProcessor.insertReasoning(task.reasoning.trim()))
-                        append("</p>")
-                    }
-                    //append("</div>")
-                    if (task.answer.isNotBlank()) {
-                        append(MarkdownRenderer.toHtml(task.answer))
-                    }
-                    append("</div>")
-                }
-            append("</div>")
-            append("</div>")
-            if (task.id.isNotBlank()) {
-                append("<div class='footer'>")
-                append(HtmlProcessor.getFormatedTime(task.id))
-                append("\n\n${task.footer}")
-                append("</div>")
-            }
-            append("</details>\n")
-        }
-
-        val bubbledHtmlText = HtmlProcessor.transformCodeBlocks(htmlText)
-        return bubbledHtmlText
-    }
-
 
     fun sendTask(task: TaskData) {
         val url = provider.buildBaseUrl() + provider.buildChatEndpoint()
@@ -717,7 +641,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         val requestOk = localAIService.createRequest(url, model, "Write a short bedtime story about a unicorn.")
         val responseOk = clientOk.newCall(requestOk).execute()
         println(responseOk.body?.string())
-
     }
 
     /**
@@ -800,7 +723,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 .model(provider.buildChatModel())
                 .maxTokens(provider.buildMaxTokenLimit())
                 .build(task)
-            logger.info("$chatContext")
+            //logger.info("processChatTask $chatContext")
             val stateManager = StateManager()
             val stateMachine = StateMachine()
             val adapter = BackendAdapter(project)
@@ -922,34 +845,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         runChatTaskInBackground(project, task) { updatedTask ->
             updateTaskOnUI(updatedTask)
         }
-
-/*
-        // del below
-
-        // Подготовка запроса к AI
-        val request = "${task.job} ${task.content}"
-        Thread {
-            val startTime = System.currentTimeMillis()
-            try {
-
-                val response = LocalAIService.callLocalAI(request)
-                val endTime = System.currentTimeMillis()
-
-                val durationText = formatDuration(endTime - startTime)
-
-                // Обновляем задачу
-                task.answer = response
-                task.description = "Ответ получен за $durationText"
-                task.status = "done"
-
-                updateTaskOnUI(task)
-            } catch (e: Exception) {
-                task.description = "**Ошибка:** ${e.message}"
-                task.status = "error"
-                updateTaskOnUI(task)
-            }
-        }.start()
-*/
     }
 
     // Обновление задачи в taskList и вызов onTasksChanged
@@ -1066,10 +961,9 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
     fun Color.toHex() = "#%02x%02x%02x".format(red, green, blue)
 
     object MarkdownRenderer {
-
-        private val parser = Parser.builder().build()
-
-        private val renderer = HtmlRenderer.builder()
+        val options = MutableDataSet().set(Parser.EXTENSIONS, listOf(TablesExtension.create()))
+        private val parser = Parser.builder(options).build()
+        private val renderer = HtmlRenderer.builder(options)
             .escapeHtml(true)
             .attributeProviderFactory(object : AttributeProviderFactory {
 
@@ -1101,495 +995,6 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
             val document = parser.parse(markdown)
             return renderer.render(document)
         }
-    }
-
-    /*
-    if (!result.reasoning.isNullOrBlank()) {
-    append(
-        """
-        <details style="margin-top:8px;">
-            <summary>🧠 Размышления</summary>
-            <pre>${result.reasoning}</pre>
-        </details>
-        """.trimIndent()
-    )
-}
-     */
-
-    fun Color.darker(factor: Float = 0.9f): Color {
-        return Color(
-            (red * factor).toInt().coerceIn(0, 255),
-            (green * factor).toInt().coerceIn(0, 255),
-            (blue * factor).toInt().coerceIn(0, 255),
-            alpha
-        )
-    }
-
-    fun Color.lighter(factor: Float = 0.1f): Color {
-        return Color(
-            (red + (255 - red) * factor).toInt().coerceIn(0, 255),
-            (green + (255 - green) * factor).toInt().coerceIn(0, 255),
-            (blue + (255 - blue) * factor).toInt().coerceIn(0, 255),
-            alpha
-        )
-    }
-
-    fun Color.adjustBrightness(factor: Float): Color {
-        val hsb = FloatArray(3)
-        Color.RGBtoHSB(red, green, blue, hsb)
-
-        hsb[2] = (hsb[2] * factor).coerceIn(0f, 1f)
-
-        return Color.getHSBColor(hsb[0], hsb[1], hsb[2])
-    }
-
-    fun isDarkTheme(): Boolean {
-        val lookAndFeel = UIManager.getLookAndFeel().name.lowercase();
-        return lookAndFeel.contains("darcula") || lookAndFeel.contains("dark");
-    }
-
-    private fun renderChatBlocks(tasks: List<TaskData>) {
-
-        logger.info("Rendering ${tasks.size} blocks")
-
-        val html = tasks.joinToString("\n\n") { task ->
-            buildTaskHtml(task)
-        }
-        //logger.info("html=$html")
-
-        // scan plain text for language
-        val regex = Regex("```(\\w+)")
-        val allText = tasks.joinToString("\n") { task ->
-            listOf(
-                task.question,
-                "",
-                task.answer
-            ).joinToString("\n")
-        }
-        val languages = regex.findAll(allText)
-            .map { it.groupValues[1] }
-            .toSet()
-        //logger.info("languages=$languages")
-
-        // LANGUAGES <PRISM>
-        val deps = mapOf(
-            "c" to listOf("clike"),
-            "cpp" to listOf("c"),
-            "java" to listOf("clike"),
-            "kotlin" to listOf("java")
-        )
-
-        fun expand(lang: String, deps: Map<String, List<String>>, result: MutableSet<String>) {
-            for (dep in deps[lang].orEmpty()) {
-                expand(dep, deps, result)
-            }
-            result.add(lang)
-        }
-
-        val result = linkedSetOf<String>() // ВАЖНО: сохраняет порядок
-        for (lang in languages.sorted()) {
-            expand(lang, deps, result)
-        }
-
-        val prismCss        = loadResource("css/prism-tomorrow.min.css")
-        val prismCore       = loadResource("css/prism.min.js")
-
-        val supportedLanguages = setOf(
-            "clike", "python", "java", "kotlin", "bash", "go",
-            "rust", "c", "cpp",  "pascal", "lisp", "json", "javascript"
-            )
-
-        val loadedList = linkedSetOf<String>()
-
-        for (lang in supportedLanguages) {
-            if (result.contains(lang)) {
-                logger.info("loading $lang language")
-                loadedList.add(
-                    loadResource("css/prism-languages/prism-$lang.min.js")
-                )
-            }
-        }
-
-        val prismLangScripts = loadedList.joinToString("\n") { js ->
-            "<script>$js</script>"
-        }
-
-        // Цвета темы
-        val panelBg = UIManager.getColor("Panel.background") ?: JBColor.WHITE
-        val textColor = UIManager.getColor("Label.foreground") ?: JBColor.BLACK
-        val codeBg = EditorColorsManager.getInstance().globalScheme.defaultBackground
-
-        val bubbleBg = if (isDarkTheme()) {
-            panelBg.adjustBrightness(0.2f)
-        } else {
-            panelBg.adjustBrightness(0.8f)
-        }
-
-        val bubbleText = if (isDarkTheme()) {
-            textColor.adjustBrightness(0.2f)
-        } else {
-            textColor.adjustBrightness(0.8f)
-        }
-
-        val styledHtml = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                /* 1. ОБЩИЕ НАСТРОЙКИ (Layout) */
-                body { 
-                    background-color: #191a1c; 
-                    color: #d1d3d9; 
-                    margin: 0; 
-                    padding: 12px 16px; 
-                    font-family: system-ui, -apple-system, sans-serif;
-                    line-height: 1.6;
-                    font-size: 13px;
-                }
-            
-                .chat {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 12px;
-                }
-            
-                /* 2. ПУЗЫРИ СООБЩЕНИЙ */
-                .bubble-user, .bubble-assistant {
-                    padding: 10px 14px;
-                    background: #141516; /* Тёмный фон для обоих */
-                    color: #a7a9ae;
-                    max-width: 85%;
-                }
-            
-                .bubble-user {
-                    align-self: flex-start;
-                    border-radius: 12px 12px 12px 4px;
-                }
-            
-                /* Контейнер пузыря теперь должен быть относительным для позиционирования кнопки */
-                .bubble-user {
-                    position: relative;
-                    transition: max-height 0.3s ease-out;
-                    overflow: hidden;
-                }
-    
-                /* Класс для свернутого состояния */
-                .bubble-user.collapsed {
-                    max-height: 40px; /* Высота одной строки + отступы */
-                    cursor: pointer;
-                }
-
-                /* Кнопка сворачивания */
-                .collapse-btn {
-                    position: absolute;
-                    top: 4px;
-                    right: 8px;
-                    background: #2d2d2d;
-                    color: #a7a9ae;
-                    border: 1px solid #444;
-                    border-radius: 4px;
-                    font-size: 10px;
-                    cursor: pointer;
-                    opacity: 0.5;
-                    z-index: 20;
-                }
-    
-                .collapse-btn:hover {
-                    opacity: 1;
-                    background: #3d3d3d;
-                }
-    
-                /* Чтобы текст в свернутом виде не обрывался некрасиво */
-                .bubble-user.collapsed::after {
-                    content: "";
-                    position: absolute;
-                    bottom: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 20px;
-                    background: linear-gradient(transparent, #141516);
-                }
-
-                .bubble-assistant .collapse-btn {
-                    left: 8px;
-                    right: auto;
-                }
-            
-                .bubble-assistant {
-                    align-self: flex-end;
-                    border-radius: 12px 12px 4px 12px;
-                    max-width: 90%;
-                }
-                .bubble-assistant > :not(.collapse-btn) {
-                    margin-top: 10px;
-                }
-                .bubble-assistant .code-block {
-                    margin-top: 20px;
-                }
-                .bubble-user > :not(.collapse-btn) {
-                    margin-top: 10px;
-                }        
-                /* Контейнер пузыря теперь должен быть относительным для позиционирования кнопки */
-                .bubble-assistant {
-                    position: relative;
-                    transition: max-height 0.3s ease-out;
-                    overflow: hidden;
-                }
-    
-                /* Класс для свернутого состояния */
-                .bubble-assistant.collapsed {
-                    max-height: 40px; /* Высота одной строки + отступы */
-                    cursor: pointer;
-                }
-                
-                /* Чтобы текст в свернутом виде не обрывался некрасиво */
-                .bubble-assistant.collapsed::after {
-                    content: "";
-                    position: absolute;
-                    bottom: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 20px;
-                    background: linear-gradient(transparent, #141516);
-                }
-            
-            
-                /* 3. БЛОКИ КОДА (Интеграция с Prism.js) */
-                
-                .code-block pre {
-                    display: block; /* или whatever по умолчанию */
-                }
-                
-                .code-block.closed pre {
-                    display: none;
-                }
-                
-                /* Обертка для кнопок (Copy/Collapse) */
-                .code-header {
-                    display: flex;
-                    justify-content: flex-end;    /* Кнопки прижаты к правому краю */
-                    align-items: center;
-                    background: #2b2d30;          /* Цвет заголовка чуть светлее основного фона */
-                    padding: 4px 8px;
-                    border-radius: 6px 6px 0 0;
-                    gap: 4px;
-                }
-                
-                /* Название языка слева (если оно у тебя в <span>) */
-                .code-header span {
-                    margin-right: auto;           /* Отталкивает кнопки вправо */
-                    color: #6a6a6a;
-                    font-size: 11px;
-                    font-family: monospace;
-                    text-transform: lowercase;
-                }
-                
-                .code-header button {
-                    background: transparent;      /* Убираем массивный фон */
-                    color: #7a7a7a;               /* Делаем текст темнее/серее */
-                    border: 1px solid #444;       /* Тонкая темная рамка */
-                    border-radius: 3px;
-                    font-size: 10px;              /* Уменьшаем шрифт */
-                    padding: 2px 6px;             /* Минимальные отступы */
-                    cursor: pointer;
-                    transition: all 0.2s ease;    /* Плавное изменение при наведении */
-                    margin-left: 4px;             /* Расстояние между кнопками */
-                }
-
-                .code-header button:hover {
-                    color: #afb1b3;               /* При наведении текст становится светлее */
-                    background: #36393e;          /* И чуть подсвечивается фон */
-                    border-color: #555;
-                }
-                
-                pre {
-                    /* 1. Вместо переноса строк возвращаем скролл */
-                    white-space: pre !important; 
-                    overflow-x: auto !important; 
-                    
-                    /* 2. Ограничиваем ширину, чтобы блок не распирал чат */
-                    max-width: 100%;
-                    display: block;
-                
-                    /* 3. Оформление */
-                    background-color: #1e1f22;
-                    padding: 12px;
-                    border-radius: 6px;
-                    margin: 8px 0;
-                }
-                
-                /* Настройка полосы прокрутки (scrollbar), чтобы она была тонкой и аккуратной */
-                pre::-webkit-scrollbar {
-                    height: 4px; /* Горизонтальный скролл будет тонким */
-                }
-                
-                pre::-webkit-scrollbar-thumb {
-                    background: #3e4043;
-                    border-radius: 4px;
-                }
-                
-                pre::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                
-                code {
-                    word-wrap: break-word;
-                }
-            
-                /* Настройка самого блока кода */
-                pre[class*="language-"] {
-                    margin: 0 0 12px 0 !important; /* Убираем внешние отступы Prism */
-                    padding: 12px !important;
-                    border-radius: 0 0 6px 6px; /* Скругляем только низ, если есть хедер */
-                    background: #1e1f22 !important; /* Цвет как в IntelliJ */
-                    font-size: 13px !important;
-                    line-height: 1.5;
-                    white-space: pre-wrap !important; /* Если Prism все-таки подцепился, убеждаемся, что он тоже переносит */
-                }
-            
-                /* Inline код (внутри текста) */
-                :not(pre) > code {
-                    background-color: rgba(255, 255, 255, 0.1) !important;
-                    padding: 2px 5px !important;
-                    border-radius: 4px;
-                    color: #e2c08d !important; /* Выделяем цветом как в IDE */
-                    font-family: ui-monospace, 'Cascadia Mono', monospace;
-                    font-size: 0.95em;
-                }
-            
-                /* 4. ЭЛЕМЕНТЫ ИНТЕРФЕЙСА (Details, Footer) */
-                details {
-                    margin: 12px 0;
-                    border-left: 2px solid #3e4043;
-                    padding-left: 12px;
-                }
-            
-                summary { /* заголовок чата со статусом */
-                    cursor: pointer;
-                    padding: 6px 10px;
-                    background-color: rgba(255, 255, 255, 0.03);
-                    border-radius: 10px;
-                    font-weight: 400;
-                    color: #d1d3d9;
-                
-                    /* Новые свойства для фиксации в одну строку */
-                    white-space: nowrap;      /* Запрещает перенос строки */
-                    overflow: hidden;         /* Скрывает текст, выходящий за пределы */
-                    text-overflow: ellipsis;  /* Добавляет троеточие в конце (...) */
-                    display: list-item;       /* Важно сохранить для работы стрелочки раскрытия */
-                }
-                
-                .chat-header {
-                    padding: 10px;
-                    background: #1f2023;
-                    border-bottom: 1px solid #2b2d30;
-                }
-                
-                .chat-body {
-                    padding-top: 10px;
-                }
-                
-                .footer {
-                    padding-top: 8px;
-                    font-size: 11px;
-                    font-family: monospace;
-                    font-weight: 800;
-                    color: #FFEB3B;
-                }
-            
-                /* Утилиты */
-                p { margin: 6px 0; }
-                table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-                th, td { border: 1px solid #444; padding: 6px; }
-            </style>
-
-            <!-- Prism.js — лёгкая и красивая подсветка кода -->
-            <style> $prismCss </style>
-            <script> $prismCore </script>
-            
-            $prismLangScripts
-            <!-- Добавь другие языки при необходимости: javascript, xml, json, bash и т.д. -->
-
-        </head>
-        <body>
-            $html
-            <script>
-                document.addEventListener('DOMContentLoaded', () => {
-                    if (window.Prism) {
-                        Prism.highlightAll();
-                    }
-                });
-            </script>
-            <script>
-                function toggleBubble(btn) {
-                    const bubble = btn.parentElement;
-                    const isCollapsed = bubble.classList.toggle('collapsed');
-                    btn.innerText = isCollapsed ? 'expand' : 'collapse';
-                    
-                    // Опционально: если мы разворачиваем, скроллим к началу пузыря
-                    if (!isCollapsed) {
-                        bubble.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                    }
-                }
-            </script>
-            <script>
-                function toggleCode(button) {
-                    const container = button.closest('.code-block');
-                    const isOpened = !container.classList.contains('closed');
-                
-                    if (isOpened) {
-                        // закрыть
-                        container.classList.add('closed');
-                        button.innerText = 'expand';
-                    } else {
-                        // открыть
-                        container.classList.remove('closed');
-                        button.innerText = 'collapse';
-                    }
-                }
-            </script>
-            <script>            
-                function copyCode(btn) {
-                    const code = btn.parentElement.nextElementSibling.innerText;
-                    navigator.clipboard.writeText(code).then(() => {
-                        btn.innerText = "copied!";
-                        setTimeout(() => btn.innerText = "copy", 1000);
-                    });
-                }
-            </script>
-        </body>
-        </html>
-    """.trimIndent()
-        //LOG.info("styledHtml=$styledHtml")
-        jbCefBrowser.loadHTML(styledHtml)
-
-        // Инжектим taskHandlers.js (лучше делать после loadHTML, а не сразу)
-//        try {
-//            val jsCode = this::class.java.getResource("/js/taskHandlers.js")?.readText()
-//                ?: throw kotlinx.io.files.FileNotFoundException("taskHandlers.js not found in resources")
-//
-//            // Генерируем реальный JS-код для моста
-//            val actualInject = jsQuery.inject("selection")
-//
-//            // Заменяем метку в тексте файла на рабочий код
-//            val finalJsCode = jsCode.replace("PLACEHOLDER_FOR_INJECT", actualInject)
-//
-//            // Небольшая задержка, чтобы DOM был готов
-//            SwingUtilities.invokeLater {
-//                jbCefBrowser.cefBrowser.executeJavaScript(finalJsCode, "", 0)
-//            }
-//        } catch (e: Exception) {
-//            logger.warn("Failed to load taskHandlers.js", e)
-//        }
-
- //       scrollToBottom()
-    }
-
-    fun loadResource(path: String): String {
-        return requireNotNull(
-            this::class.java.classLoader.getResourceAsStream(path)
-        ).bufferedReader().use { it.readText() }
     }
 
     fun addContextMenu(textComponent: JTextComponent) {
@@ -1635,11 +1040,23 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         return Triple(fileName, startLine..endLine, text)
     }
 
+
+    fun onTaskUpdated() {
+        rebuildChatBlocksFromTasks()
+    }
+
+    override fun dispose() {
+        // Очистка ресурсов при закрытии
+    }
+
+
+    // ================== JS handlers ======================
+
     private fun addJbCefBrowserHandler() {
         val cefBrowser = jbCefBrowser.cefBrowser
 
         // 2. Обработка сообщений от JS
-        jsQuery = JBCefJSQuery.create(jbCefBrowser)   // ← самый стабильный способ сейчас
+        jsQuery = JBCefJSQuery.create(jbCefBrowser as JBCefBrowserBase)
 
         //Best Practice
         //        jsQuery.addHandler { arg ->
@@ -1690,27 +1107,27 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
     private fun injectSelectionScript() {
         val script = """
-        // Функция, которую будем вызывать из Java
-        window.getChatSelection = function() {
-            const selection = window.getSelection().toString().trim();
-            if (selection.length > 0) {
-                ${jsQuery.inject("selection")}   // отправляем текст в Java
-            }
-            return selection;
-        };
-
-        // Дополнительно: по двойному клику или Ctrl+C можно автоматически отправлять (по желанию)
-        document.addEventListener('mouseup', function() {
-            // Можно раскомментировать, если хочешь авто-заполнение при любом выделении
-            // setTimeout(() => window.getChatSelection(), 100);
-        });
-    """.trimIndent()
+            // Функция, которую будем вызывать из Java
+            window.getChatSelection = function() {
+                const selection = window.getSelection().toString().trim();
+                if (selection.length > 0) {
+                    ${jsQuery.inject("selection")}   // отправляем текст в Java
+                }
+                return selection;
+            };
+    
+            // Дополнительно: по двойному клику или Ctrl+C можно автоматически отправлять (по желанию)
+            document.addEventListener('mouseup', function() {
+                // Можно раскомментировать, если хочешь авто-заполнение при любом выделении
+                // setTimeout(() => window.getChatSelection(), 100);
+            });
+            """.trimIndent()
 
         // Выполняем после загрузки страницы
         jbCefBrowser.cefBrowser.executeJavaScript(script, "", 0)
     }
 
-    // Функция для инъекции bridge + загрузки твоего JS
+    // Функция для инъекции bridge + загрузки JS
     private fun injectTaskHandlers(cefBrowser: CefBrowser?) {
         if (!::jsQuery.isInitialized) {
             logger.warn("jsQuery ещё не инициализирован")
@@ -1719,14 +1136,14 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
         // Защита от повторного создания bridge
         val bridgeScript = """
-        if (!window.taskBridge) {
-            window.taskBridge = {
-                send: function(msg) {
-                    ${jsQuery.inject("msg")}   // ← только здесь используется inject
-                }
-            };
-            console.log("%c[ChatPanel] taskBridge created", "color: #0a0");
-        }
+            if (!window.taskBridge) {
+                window.taskBridge = {
+                    send: function(msg) {
+                        ${jsQuery.inject("msg")}   // ← только здесь используется inject
+                    }
+                };
+                console.log("%c[ChatPanel] taskBridge created", "color: #0a0");
+            }
         """.trimIndent()
 
         // Сначала создаём bridge
@@ -1742,30 +1159,30 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         cefBrowser?.executeJavaScript(finalJsCode, null, 0)
 
         val scrollFixScript = """
-    (function() {
-        window.addEventListener('wheel', function(e) {
-            if (e.ctrlKey) return;
-
-            // Берем коэффициент масштабирования системы (например, 1.25 или 2.0)
-            const dpr = window.devicePixelRatio || 1;
-            
-            // Если дельта очень маленькая (особенность JCEF), 
-            // мы компенсируем её, учитывая масштаб
-            let multiplier = 15 * dpr; 
-
-            if (e.deltaMode === 1) { // Lines
-                multiplier *= 1.5; 
-            }
-
-            e.preventDefault();
-            window.scrollBy({
-                top: e.deltaY * multiplier,
-                left: e.deltaX * multiplier,
-                behavior: 'auto'
-            });
-        }, { passive: false });
-    })();
-""".trimIndent()
+            (function() {
+                window.addEventListener('wheel', function(e) {
+                    if (e.ctrlKey) return;
+        
+                    // Берем коэффициент масштабирования системы (например, 1.25 или 2.0)
+                    const dpr = window.devicePixelRatio || 1;
+                    
+                    // Если дельта очень маленькая (особенность JCEF), 
+                    // мы компенсируем её, учитывая масштаб
+                    let multiplier = 15 * dpr; 
+        
+                    if (e.deltaMode === 1) { // Lines
+                        multiplier *= 1.5; 
+                    }
+        
+                    e.preventDefault();
+                    window.scrollBy({
+                        top: e.deltaY * multiplier,
+                        left: e.deltaX * multiplier,
+                        behavior: 'auto'
+                    });
+                }, { passive: false });
+            })();
+        """.trimIndent()
 
         cefBrowser?.executeJavaScript(scrollFixScript, null, 0)
     }
@@ -1797,26 +1214,19 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
 
     private fun scrollToBottom() {
         jbCefBrowser.cefBrowser.executeJavaScript(
-"""
-(function() {
-    const el = document.scrollingElement || document.documentElement;
-    if (el) {
-        el.scrollTop = el.scrollHeight;
-    }
-})();
-""".trimIndent(),
+            """
+            (function() {
+                const el = document.scrollingElement || document.documentElement;
+                if (el) {
+                    el.scrollTop = el.scrollHeight;
+                }
+            })();
+            """.trimIndent(),
             jbCefBrowser.cefBrowser.url,
             0
         )
     }
 
-    fun onTaskUpdated() {
-        rebuildChatBlocksFromTasks()
-    }
-
-    override fun dispose() {
-        // Очистка ресурсов при закрытии
-    }
 
 
 }
