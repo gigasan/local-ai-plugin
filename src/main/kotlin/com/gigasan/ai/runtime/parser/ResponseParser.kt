@@ -32,8 +32,6 @@ enum class ErrorCategory {
     UNKNOWN
 }
 
-
-
 inline fun ResponseResult.onSuccess(block: (ResponseResult.Success) -> Unit): ResponseResult {
     if (this is ResponseResult.Success) block(this)
     return this
@@ -203,9 +201,13 @@ class ResponseParser(val project: Project): JsonFileLogger {
     val ollamaParser by lazy { OllamaParser(project) }
     val openAiParser by lazy { OpenAiParser(project) }
 
-    private val json = Json {
-        //ignoreUnknownKeys = true // 🔥 критично
-        //isLenient = true
+    val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
+
+    val json = Json {
+        // Если мы в режиме разработки, хотим знать о новых полях (будет ошибка)
+        // Если у пользователя — игнорируем всё лишнее
+        ignoreUnknownKeys = !isInternal
+        coerceInputValues = !isInternal
     }
 
     fun parse(raw: String): ResponseResult {

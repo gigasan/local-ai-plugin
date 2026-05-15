@@ -34,14 +34,17 @@ object AIMetrics {
         val millis = value % 1000
 
         return when {
+            // Больше часа: 1h 20m 30s
             hours > 0 ->
-                "%2d:%02d:%02d.%03dh".format(hours, minutes, seconds, millis)
+                "${hours}h ${minutes}m ${seconds}s"
 
-            minutes > 0 ->
-                "%2d:%02d.%03dm".format(minutes, seconds, millis)
+            // От 1 минуты до 1 часа: 5m 30s
+            value >= 60_000 ->
+                "${minutes}m ${seconds}s"
 
+            // Меньше минуты: 15.450s
             else ->
-                "%2d.%03ds".format(seconds, millis)
+                "%d.%03ds".format(seconds, millis)
         }
     }
 

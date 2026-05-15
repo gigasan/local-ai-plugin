@@ -17,6 +17,7 @@ interface PluginConfigProvider {
     fun buildSelectEntireLines(): Boolean
     fun buildUseSoftWrap(): Boolean
     fun buildInstruction(): String
+    fun buildDebugLogs(): Boolean?
 
     // endpoint
     fun buildBackendEndpoint(): BackendEndpoint
@@ -67,7 +68,9 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
     override fun buildUseSoftWrap(): Boolean {
         return local.useSoftWrap
     }
-
+    override fun buildDebugLogs(): Boolean {
+        return global.state.enableDebugLog
+    }
     override fun buildInstruction(): String {
         return InstructionsService.instance.state.selectedInstruction
     }

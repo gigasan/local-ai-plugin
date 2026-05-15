@@ -15,7 +15,7 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.io.FileUtil
 
-class LoadResponseAction : AnAction("LoadResponseAction", "LoadResponseAction", AllIcons.FileTypes.Json) {
+class LoadResponseAction : AnAction("Load Response (Debug Log) stored in json_logs project folder", "LoadResponseAction from JSON", AllIcons.FileTypes.Json) {
     private val logger = Logger.getInstance("LoadResponseAction")
     private val settings = PluginSettingsService.instance
 
@@ -35,7 +35,7 @@ class LoadResponseAction : AnAction("LoadResponseAction", "LoadResponseAction", 
     }
 
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabledAndVisible = settings.state.enableDebugFeature
+        e.presentation.isEnabledAndVisible = settings.state.enableDebugLog
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread {

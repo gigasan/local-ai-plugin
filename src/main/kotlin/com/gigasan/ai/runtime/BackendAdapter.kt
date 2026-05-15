@@ -128,7 +128,10 @@ object DefaultAdapter: JsonFileLogger {
             ctx.temperature.let { put("temperature", it) }
             ctx.maxTokens.let { put("max_tokens", it) }
         }
-        logger.info("DefaultAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        val provider = project.service<PluginConfigProvider>()
+        if (provider.buildDebugLogs() == true) {
+            logger.info("DefaultAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        }
         saveJson(project, "request_DefaultAdapter", json.toString())
         return json.toHttpRequest(url, apiKey)
     }
@@ -152,7 +155,10 @@ object ChatCompletionsAdapter: JsonFileLogger {
             ctx.temperature.let { put("temperature", it) }
             ctx.maxTokens.let { put("max_tokens", it) }
         }
-        logger.info("ChatCompletionsAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        val provider = project.service<PluginConfigProvider>()
+        if (provider.buildDebugLogs() == true) {
+            logger.info("ChatCompletionsAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        }
         saveJson(project, "request_ChatCompletionsAdapter", json.toString())
         return json.toHttpRequest(url, apiKey)
     }
@@ -182,7 +188,10 @@ object ResponsesAdapter: JsonFileLogger {
             //put("max_tokens", ctx.maxTokens)
             put("stream", ctx.stream)
         }
-        logger.info("ResponsesAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        val provider = project.service<PluginConfigProvider>()
+        if (provider.buildDebugLogs() == true) {
+            logger.info("ResponsesAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        }
         // Сохраняем запрос
         saveJson(project, "request_ResponsesAdapter", json.toString())
         return json.toHttpRequest(url, apiKey)
@@ -237,7 +246,10 @@ object OllamaAdapter: JsonFileLogger {
 
 
         }
-        logger.info("OllamaAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        val provider = project.service<PluginConfigProvider>()
+        if (provider.buildDebugLogs() == true) {
+            logger.info("OllamaAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        }
         saveJson(project, "request_OllamaAdapter", json.toString())
         return json.toHttpRequest(url, apiKey)
     }
@@ -273,7 +285,10 @@ object LmStudioAdapter: JsonFileLogger {
             }
 
         }
-        logger.info("LmStudioAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        val provider = project.service<PluginConfigProvider>()
+        if (provider.buildDebugLogs() == true) {
+            logger.info("LmStudioAdapter FINAL JSON = $json") // 🔥 ОБЯЗАТЕЛЬНО
+        }
         saveJson(project, "request_LmStudioAdapter", json.toString())
         return json.toHttpRequest(url, apiKey)
     }

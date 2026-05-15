@@ -151,28 +151,5 @@ fun Long.toHumanReadableSize(): String {
     return String.format("%.1f %sB", this / Math.pow(1024.0, exp.toDouble()), pre)
 }
 
-fun wrapCodeBlock(text: String, code: String, language: String?=null): String {
-    val lang = language?:"text"
-    val result = """
-$text
-```$lang
-$code
-```
-""".trimIndent()
-    //logger.info("codeBlock: $result")
-    return result
-}
 
-fun wrapCode(code: String?, language: String? = null): String {
-    if (code.isNullOrBlank()) return ""
 
-    val lang = language ?: "text"
-    val fence = if (code.contains("```")) "````" else "```"
-
-    return "$fence$lang\n$code\n$fence"
-}
-
-fun wrapData(block: String, begin: String = "===DATA===", end: String = "===DATA END==="): String {
-    if (block.isEmpty()) return ""
-    return "\n$begin\n\n$block\n\n$end\n"
-}
