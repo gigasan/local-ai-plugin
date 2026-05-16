@@ -1,8 +1,6 @@
 package com.gigasan.ai.ui.chat
 
 import com.intellij.openapi.diagnostic.Logger
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -42,46 +40,10 @@ object HtmlProcessor {
         }
     }
 
-    // Пример использования (полная программа):
-    // Читает весь HTML из stdin и выводит преобразованный результат в stdout.
-    // Можно запустить как обычный Kotlin-файл.
-    fun main() {
-        val html = System.`in`.bufferedReader().use { it.readText() }
-        val result = transformCodeBlocks(html)
-        println(result)
-    }
-
     fun fixTableFormatting(input: String): String {
         // Добавляем перенос строки перед первой чертой таблицы,
         // если это похоже на начало заголовка
         return input.replace(Regex("""(\w)\s*\|"""), "$1\n|")
-    }
-
-    private fun cleanMarkdownHtml(rawHtml: String): String {
-        var html = rawHtml
-
-        // === Очистка через Jsoup — очень эффективно ===
-        val doc: Document = Jsoup.parseBodyFragment(html)
-
-        // Удаляем всё, что связано с IntelliJ highlighter и copy buttons
-        doc.select("div.code-fence-highlighter-copy-button, .code-fence-highlighter-copy-button-icon, .tooltiptext").remove()
-        doc.select("pre").forEach { pre ->
-            pre.select("div").remove()           // удаляем обёртки внутри pre
-        }
-
-        // Удаляем все md-src-pos и data-* атрибуты
-        doc.select("*").forEach { element ->
-            element.removeAttr("md-src-pos")
-            element.removeAttr("data-src-pos")
-            element.removeAttr("data-fence-content")
-            if (element.attr("style").isBlank()) {
-                element.removeAttr("style")
-            }
-        }
-
-        // Делаем чистый HTML (без лишних обёрток)
-        html = doc.body().html()
-        return html
     }
 
     // Простая функция определения языка

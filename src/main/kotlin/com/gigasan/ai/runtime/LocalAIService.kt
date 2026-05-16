@@ -10,13 +10,8 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.HttpHeaders
-import io.ktor.http.headers
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -94,21 +89,41 @@ class LocalAIService(private val project: Project) {
     }
 
     // "https://api.openai.com/v1/responses"
-    suspend fun createResponse(url: String, model: String, prompt: String): String {
-        val client = HttpClient(CIO)
+    suspend fun createResponse(url: String, model: String, prompt: String): String = withContext(Dispatchers.IO) {
+        try {
+            val conn = URI.create(url).toURL().openConnection() as HttpURLConnection
 
-        val response: JsonObject = client.post(url) {
-            headers {
-                append(HttpHeaders.Authorization, "Bearer YOUR_API_KEY")
-                append(HttpHeaders.ContentType, "application/json")
-            }
-            setBody("""{
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            // Устанавливаем заголовки
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Authorization", "Bearer YOUR_API_KEY")
+
+            // Таймауты (важно для ИИ, так как генерация долгая)
+            conn.connectTimeout = 30_000
+            conn.readTimeout = 60_000
+
+            // Формируем JSON (здесь используем простую строку, чтобы не тянуть сериализатор)
+            val jsonBody = """{
             "model": "$model",
             "input": "$prompt"
-        }""")
-        }.body()
+            }""".trimIndent()
 
-        return response.toString()
+            // Отправка запроса
+            conn.outputStream.use { os ->
+                os.write(jsonBody.toByteArray(Charsets.UTF_8))
+            }
+
+            // Проверка кода ответа
+            if (conn.responseCode in 200..299) {
+                conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } else {
+                val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "No error body"
+                "❌ HTTP Error: ${conn.responseCode}\n$errorBody"
+            }
+        } catch (e: Exception) {
+            "❌ Connection failed: ${e.localizedMessage}"
+        }
     }
 
 

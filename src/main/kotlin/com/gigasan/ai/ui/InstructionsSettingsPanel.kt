@@ -28,7 +28,6 @@ import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
-import org.jetbrains.kotlin.tooling.core.closure
 
 data class InstructionsSettingsPanel(
     var project: Project,

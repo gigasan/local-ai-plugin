@@ -5,9 +5,8 @@
     <vendor url="https://github.com/gigasan">GigaSan</vendor>
 
     <description>
-        A lightweight AI chat tool integrated into your IDE.
-        Connect to local or self-hosted models using REST API (LM Studio, OpenAI-compatible, or custom endpoints).
-        Supports sending code snippets, files, and text with a user-friendly interface right in the workflow.
+        AI assistant integrated into JetBrains IDE for working with local models (LM Studio, Ollama) and OpenAI API.
+        Enables chatting with LLMs and sending code, files, and text directly from the editor.
     </description>
 
     <dependencies>
@@ -15,12 +14,6 @@
         <plugin id="com.intellij.modules.platform" />
         <plugin id="com.intellij.modules.lang" />
     </dependencies>
-
-    <!-- Optional Kotlin (только если пользователь установит Kotlin-плагин) -->
-    <depends optional="true" config-file="com.gigasan.ai-withKotlin.xml">org.jetbrains.kotlin</depends>
-
-    <!-- Optional Rust (только если пользователь установит Rust-плагин) -->
-    <depends optional="true" config-file="com.gigasan.ai-withRust.xml">com.jetbrains.rust</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <projectService

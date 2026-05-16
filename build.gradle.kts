@@ -15,30 +15,20 @@ repositories {
     intellijPlatform {
         defaultRepositories()
         jetbrainsRuntime()
-        marketplace()        // разрешает поиск сторонних плагинов
+        marketplace()
     }
 }
 
 dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
-    implementation("org.jsoup:jsoup:1.18.1")
-    implementation("io.ktor:ktor-client-core:3.0.1")
-    implementation("io.ktor:ktor-client-cio:3.0.1")
-    implementation("io.ktor:ktor-client-content-negotiation:3.0.1")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3") // Kotlin Coroutines for async API calls
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
-    implementation("org.xerial:sqlite-jdbc:3.45.2.0")
-    implementation("org.eclipse.jgit:org.eclipse.jgit:7.2.1.202505142326-r")
     implementation("com.knuddels:jtokkit:1.1.0")
     intellijPlatform {
         intellijIdea(targetVersion)
         bundledPlugin("com.intellij.java")
         bundledPlugin("org.intellij.plugins.markdown")
-        bundledPlugin("org.jetbrains.kotlin")
-        plugin("com.jetbrains.rust", "261.22158.214")
     }
 }
 

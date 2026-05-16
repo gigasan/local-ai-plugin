@@ -15,7 +15,7 @@ import com.gigasan.ai.config.storage.WorkItem
 import com.gigasan.ai.config.storage.TaskSequenceService
 
 
-class EnqueueAction : AnAction("Enqueue the Task Local AI Model", "Send selected text into AI task", AllIcons.Actions.AddToDictionary) {
+class EnqueueAction : AnAction("Enqueue the Task", "Send selected text into AI task", AllIcons.Actions.AddToDictionary) {
     private val logger = Logger.getInstance("EnqueueAction")
     private val settings = PluginSettingsService.instance
 
@@ -83,9 +83,9 @@ class EnqueueAction : AnAction("Enqueue the Task Local AI Model", "Send selected
         val key = prov.buildEndpointSetting().selectedModelKey
         logger.info("Enqueue action started endpoint=${state.backendEndpoint} key=$key model=$model")
         val dynamicText = if (model.isNotBlank()) {
-            "Enqueue the Task Local AI ($model)"
+            "Enqueue the Task ($model)"
         } else {
-            "Enqueue the Task Local AI (No model selected)"
+            "Enqueue the Task (No model selected)"
         }
         e.presentation.setText(dynamicText)
         // Можно также выключать кнопку, если модель не выбрана

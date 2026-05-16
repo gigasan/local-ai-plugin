@@ -1,12 +1,9 @@
 package com.gigasan.ai.ui.chat
 
-import com.gigasan.ai.actions.AnalyzeAction
 import com.gigasan.ai.actions.AskAction
 import com.gigasan.ai.actions.AutoSearchToggleAction
 import com.gigasan.ai.actions.CleanChatAction
 import com.gigasan.ai.actions.LoadResponseAction
-import com.gigasan.ai.actions.RefactorAction
-import com.gigasan.ai.actions.SendFileAction
 import com.gigasan.ai.actions.TaskCompositorAction
 import com.gigasan.ai.config.DefaultChatConfigProvider
 import com.gigasan.ai.config.PluginConfigProvider
@@ -83,6 +80,7 @@ import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.vladsch.flexmark.ext.tables.TablesExtension
 import com.vladsch.flexmark.util.data.MutableDataSet
+import java.awt.Toolkit
 
 class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true), Disposable {
     private val provider get() = project.service<PluginConfigProvider>()
@@ -186,17 +184,8 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         if (settings.state.enableDebugLog) {
             mainGroup.add(LoadResponseAction())
         }
-        if (settings.state.enableFileTransfer) {
-            mainGroup.add(SendFileAction())
-        }
         if (settings.state.enableTaskCompositor) {
             mainGroup.add(TaskCompositorAction())
-        }
-        if (settings.state.enableRefactoring) {
-            mainGroup.add(RefactorAction())
-        }
-        if (settings.state.enableCodeAnalysis) {
-            mainGroup.add(AnalyzeAction())
         }
         if (settings.state.enableCleanChat) {
             mainGroup.add(CleanChatAction())
@@ -559,7 +548,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         val am = root.getActionMap()
 
         // Основные шорткаты
-        im.put(KeyStroke.getKeyStroke("control F"), "find")
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_F, Toolkit.getDefaultToolkit().menuShortcutKeyMaskEx), "find")
         im.put(KeyStroke.getKeyStroke("ESCAPE"), "hideFind")
         im.put(KeyStroke.getKeyStroke("F3"), "findNext")
         im.put(KeyStroke.getKeyStroke("shift F3"), "findPrev")

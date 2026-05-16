@@ -31,11 +31,6 @@ class PluginSettingsService : PersistentStateComponent<PluginSettingsService.Sta
         var enableAutoSearch: Boolean = true,
         var enableDevToolsAction: Boolean = false,
 
-        // deprecated
-        var enableFileTransfer: Boolean = false,
-        var enableRefactoring: Boolean = false,
-        var enableCodeAnalysis: Boolean = false,
-
         // backends
         var allowedBackendEndpoints: Set<BackendEndpoint> = setOf(
             BackendEndpoint.LM_STUDIO_ENDPOINT,
