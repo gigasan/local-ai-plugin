@@ -24,13 +24,21 @@ class InstructionsService : PersistentStateComponent<InstructionsService.State> 
         var selectedInstruction: String = "",
         var selectedProblem: String = "",
         var enabledProblem: Boolean = true,
-
-        var systemExpanded: Boolean = false,
-        var inputExpanded: Boolean = false,
-        var commonExpanded: Boolean = false,
     )
 
     private var myState = State()
+
+    private val logger = Logger.getInstance(InstructionsService::class.java)
+    private val gson = GsonBuilder().setPrettyPrinting().create()
+
+
+    // Блок init выполняется ВСЕГДА при создании сервиса
+    init {
+        // Загружаем дефолты сразу. Если потом вызовется loadState,
+        // он просто перезапишет эти списки актуальными данными из XML.
+        loadDefaultInstructions()
+        loadDefaultProblems()
+    }
 
     override fun getState(): State = myState
 
@@ -42,9 +50,6 @@ class InstructionsService : PersistentStateComponent<InstructionsService.State> 
             loadDefaultProblems()
         }
     }
-
-    private val gson = GsonBuilder().setPrettyPrinting().create()
-    val logger = Logger.getInstance("InstructionsService")
 
     fun loadDefaultInstructions(onSave: (() -> Unit)? = null) {
         try {

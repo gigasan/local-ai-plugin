@@ -126,7 +126,12 @@ data class ContentItem(
 
 class OpenAiParser(val project: Project) {
     private val logger = Logger.getInstance("OpenAiParser")
-    private val json = Json
+    val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
+    val json = Json {
+        ignoreUnknownKeys = !isInternal
+        coerceInputValues = !isInternal
+        isLenient = !isInternal
+    }
 
     fun parseResponses(raw: String): ResponseResult {
 

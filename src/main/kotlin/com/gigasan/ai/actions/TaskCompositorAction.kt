@@ -29,7 +29,7 @@ class TaskCompositorAction : AnAction("TaskCompositorDialog", "Open TaskComposit
         if (!isVisible) return
 
         // Проверяем модель для активности кнопки
-        val modelName = DefaultChatConfigProvider(project!!).buildEndpointSetting().selectedModelName
+        val modelName = DefaultChatConfigProvider(project).buildEndpointSetting().selectedModelName
         e.presentation.isEnabled = modelName.isNotBlank()
         e.presentation.text = "Task Compositor"
         e.presentation.description = if (modelName.isBlank()) "Select a model first" else "Open compositor for $modelName"

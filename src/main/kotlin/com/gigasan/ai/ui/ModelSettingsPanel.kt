@@ -183,36 +183,36 @@ data class ModelSettingsPanel(
         cb: ComboBox<String>? = null,
         isParentExpanded: Boolean = false
     ) {
-        // В идеале ссылки на row и cb нужно сохранить в компонентах или найти в панели
-        if (model == null)
-        {
-            cb?.isVisible = false
-            lbl?.isVisible = false
-            return
-        }
+        if (cb == null) return
 
-        val supports = model.supportsReasoning
+        // Если модель null, то supports будет false
+        val supports = model?.supportsReasoning ?: false
 
-        // 1. Управляем видимостью всей строки
-        if (supports && cb != null) {
-            // 2. Обновляем список доступных опций в комбобоксе
+        if (supports) {
             cb.removeAllItems()
             model.reasoningOptions.forEach { cb.addItem(it) }
 
-            // 3. Устанавливаем дефолтное значение, если в настройках еще пусто
             if (components.endpointSettings.reasoning.isEmpty()) {
                 cb.selectedItem = model.defaultReasoning ?: model.reasoningOptions.firstOrNull()
             } else {
                 cb.selectedItem = components.endpointSettings.reasoning
             }
 
-            // 4. Блокируем, если выбора нет
             cb.isEnabled = model.reasoningOptions.size > 1
-
             cb.isVisible = isParentExpanded
             lbl?.isVisible = isParentExpanded
         } else {
-            cb?.isVisible = false
+            // === ФИКС АНОМАЛИИ ===
+            // Очищаем комбобокс и искусственно добавляем в него текущее значение из настроек.
+            // Так как комбобокс скрыт, пользователь этого не увидит,
+            // зато автоматический isModified() от IntelliJ увидит, что в UI лежит ровно то же,
+            // что и в настройках (строка == строка), и кнопка Apply не будет загораться.
+            cb.removeAllItems()
+            val currentReasoning = components.endpointSettings.reasoning
+            cb.addItem(currentReasoning)
+            cb.selectedItem = currentReasoning
+
+            cb.isVisible = false
             lbl?.isVisible = false
         }
     }

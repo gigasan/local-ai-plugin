@@ -19,7 +19,7 @@ import com.knuddels.jtokkit.api.EncodingType
 
 object TokenCalculator {
     private val registry = Encodings.newDefaultEncodingRegistry()
-    private val encoding = registry.getEncoding(EncodingType.CL100K_BASE)
+    private val encoding = registry.getEncoding(EncodingType.O200K_BASE)
 
     fun countTokens(text: String?): Int {
         if (text.isNullOrBlank()) return 0

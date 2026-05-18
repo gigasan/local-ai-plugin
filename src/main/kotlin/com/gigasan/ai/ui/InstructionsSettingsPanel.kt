@@ -13,7 +13,7 @@ import java.awt.Dimension
 import javax.swing.*
 import kotlin.text.trim
 import com.gigasan.ai.config.storage.InstructionsService
-import com.gigasan.ai.config.storage.TaskSequence
+import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.core.createTooltipRenderer
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
@@ -177,9 +177,9 @@ data class InstructionsSettingsPanel(
 
                 }
             }.apply {
-                expanded = instructionsService.state.systemExpanded
+                expanded = ProjectSettingsService.getInstance(project).state.instructionSetExpanded
                 addExpandedListener { isExpanded ->
-                    instructionsService.state.systemExpanded = isExpanded
+                    ProjectSettingsService.getInstance(project).state.instructionSetExpanded = isExpanded
                 }
             }.customize(UnscaledGapsY(bottom = 0))
         }

@@ -1,5 +1,6 @@
 package com.gigasan.ai.runtime.parser
 
+import com.gigasan.ai.core.TokenCalculator
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import kotlinx.serialization.Serializable
@@ -95,7 +96,12 @@ data class TopLogprobs(
 
 class OllamaParser(val project: Project) {
     private val logger = Logger.getInstance("OllamaParser")
-    private val json = Json
+    val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
+    val json = Json {
+        ignoreUnknownKeys = !isInternal
+        coerceInputValues = !isInternal
+        isLenient = !isInternal
+    }
 
     fun parse(raw: String): ResponseResult {
         val parsed = try {
@@ -106,8 +112,9 @@ class OllamaParser(val project: Project) {
         }
 
         // Если это финальный аккорд (done == true) или мы не используем стриминг
-        val text = parsed.message?.content ?: ""
-        val reasoningText = text.substringAfter("<think>", "").substringBefore("</think>", "")
+        val text = parsed.message?.content?: ""
+        val reasoningText = parsed.message?.thinking
+        val reasoningText2 = text.substringAfter("<think>", "").substringBefore("</think>", "")
 
         if ((parsed.done ?: false) == false) {
             logger.warn("Failed response from ${parsed.model} because ${parsed.done_reason}")
@@ -118,20 +125,32 @@ class OllamaParser(val project: Project) {
             )
         }
 
+        // точного значения нет поэтому вычисляем приблизительно
+        val reasoning = reasoningText?:reasoningText2
+        val reasoningTokens = TokenCalculator.countTokens(reasoning)
+
+        // ⚡ КРИТИЧЕСКИЙ ФИКС 2: Корректируем математику токенов для футера
+        val totalGenTokens = parsed.eval_count ?: 0
+
+        // Чистый текст ответа = Всего сгенерировано - Токены мыслей
+        val pureOutputTokens = (totalGenTokens - reasoningTokens).coerceAtLeast(0)
+
         val usage = Usage(
             inputTokens = parsed.prompt_eval_count,
-            outputTokens = parsed.eval_count,
-            reasoningTokens = 0,
+            outputTokens = pureOutputTokens,
+            reasoningTokens = reasoningTokens,
             tokens_per_second = parsed.tokensPerSecond.toFloat(),
             prompt_tokens_per_second = parsed.promptTokensPerSecond.toFloat(),
             time_to_first_token_seconds = parsed.time_to_first_token_seconds.toFloat(),
         )
 
-        return ResponseResult.Success(
+        val parseResult = ResponseResult.Success(
             text = text,
+            reasoning = reasoning,
             model = parsed.model,
             usage = usage,
             raw = raw
         )
+        return parseResult
     }
 }

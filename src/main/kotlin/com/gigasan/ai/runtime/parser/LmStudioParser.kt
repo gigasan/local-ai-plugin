@@ -33,7 +33,12 @@ data class LMStudioResponse(
 
 class LmStudioParser(val project: Project) {
     private val logger = Logger.getInstance("LmStudioParser")
-    private val json = Json
+    val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
+    val json = Json {
+        ignoreUnknownKeys = !isInternal
+        coerceInputValues = !isInternal
+        isLenient = !isInternal
+    }
 
     fun parse(raw: String): ResponseResult {
 

@@ -1,13 +1,21 @@
 package com.gigasan.ai.runtime.parser
 
+import com.gigasan.ai.config.BackendApi
 import com.gigasan.ai.core.JsonFileLogger
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlin.collections.contains
@@ -109,13 +117,42 @@ data class ApiErrorResponse(
     val error: ApiError
 )
 
-@Serializable
+@Serializable(with = ApiErrorSerializer::class)
 data class ApiError(
     val message: String,
     val type: String? = null,
     val param: String? = null,
     val code: String? = null
 )
+
+object ApiErrorSerializer : KSerializer<ApiError> {
+    // Используем дескриптор суррогата, чтобы kotlinx.serialization знал структуру
+    override val descriptor: SerialDescriptor = ApiError.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): ApiError {
+        // Проверяем, что работаем именно с JSON-декодером
+        val input = decoder as? JsonDecoder
+            ?: throw IllegalStateException("This serializer can only be used with Json")
+
+        val element = input.decodeJsonElement()
+
+        return if (element is JsonPrimitive) {
+            // Сценарий Ollama: "error" — это просто строка (JsonLiteral)
+            ApiError(message = element.content)
+        } else {
+            // Сценарий OpenAI/другие: "error" — это полноценный JsonObject
+            // Декодируем стандартным сгенерированным сериализатором
+            input.json.decodeFromJsonElement(ApiError.serializer(), element)
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ApiError) {
+        val output = encoder as? JsonEncoder
+            ?: throw IllegalStateException("This serializer can only be used with Json")
+        // Для обратной сериализации используем стандартное поведение
+        output.encodeJsonElement(output.json.encodeToJsonElement(ApiError.serializer(), value))
+    }
+}
 
 fun ApiError.toError(raw: String): ResponseResult {
     val category = when (type) {
@@ -131,7 +168,7 @@ fun ApiError.toError(raw: String): ResponseResult {
     val errorParam = param?:""
     val errorCode = code?:""
     return ResponseResult.Error (
-        message = message + " " + errorParam + " " + errorCode,
+        message = "$message $errorParam $errorCode",
         category = category,
         type = type,
         code = code,
@@ -195,22 +232,21 @@ fun classify(obj: JsonObject): ResponseType {
     }
 }
 
-class ResponseParser(val project: Project): JsonFileLogger {
+class ResponseParser(val project: Project,  backendApi: BackendApi): JsonFileLogger {
 
     val lmStudioParser by lazy { LmStudioParser(project) }
     val ollamaParser by lazy { OllamaParser(project) }
     val openAiParser by lazy { OpenAiParser(project) }
 
     val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
-
     val json = Json {
-        // Если мы в режиме разработки, хотим знать о новых полях (будет ошибка)
-        // Если у пользователя — игнорируем всё лишнее
         ignoreUnknownKeys = !isInternal
         coerceInputValues = !isInternal
+        isLenient = !isInternal
     }
 
     fun parse(raw: String): ResponseResult {
+        //logger.info("parse raw=${raw}")
         logger.info("parse raw.length=${raw.length}")
         val element = json.parseToJsonElement(raw)
         val obj = element.jsonObject
@@ -220,8 +256,18 @@ class ResponseParser(val project: Project): JsonFileLogger {
 
         return when (responseType) {
             ResponseType.Error -> {
-                val error = json.decodeFromJsonElement<ApiErrorResponse>(element)
-                error.error.toError(raw)
+                // Десериализуем с помощью нашего гибкого класса
+                val errorResponse = json.decodeFromString<ApiErrorResponse>(raw)
+                val apiError = errorResponse.error
+
+                ResponseResult.Error(
+                    message = apiError.message,
+                    category = ErrorCategory.SERVER,
+                    type = apiError.type,
+                    code = apiError.code,
+                    param = apiError.param,
+                    raw = raw
+                )
             }
 
             ResponseType.LmStudio ->

@@ -1,5 +1,6 @@
-package com.gigasan.ai.runtime
+@file:OptIn(ExperimentalSerializationApi::class)
 
+package com.gigasan.ai.runtime
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -15,8 +16,11 @@ import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonElement
 import okhttp3.OkHttpClient
 import com.fasterxml.jackson.annotation.JsonAlias
+import com.gigasan.ai.config.BackendApi
 import com.gigasan.ai.core.JsonFileLogger
 import com.gigasan.ai.runtime.parser.LMStats
+import com.gigasan.ai.runtime.parser.LMStudioResponse
+import com.gigasan.ai.runtime.parser.OllamaResponse
 import com.gigasan.ai.runtime.parser.ResponseResult
 import com.gigasan.ai.runtime.parser.Usage
 import kotlinx.serialization.json.JsonArray
@@ -32,13 +36,16 @@ class ClientStream(
     private val stateManager: StateManager,
     private val stateMachine: StateMachine,
 ): JsonFileLogger {
+
     fun execute(project: Project, ctx: ChatContext, indicator: ProgressIndicator, onEvent: (StreamEvent) -> Unit): ResponseResult {
+        logger.info("Starting client stream ${adapter.backendApi}")
         // Получаем контекст со всеми инструментами под конкретный бэкенд
         val context = adapter.getContext(ctx, stateManager, stateMachine)
         val call = http.newCall(context.request)
         val builder = ResultBuilder(context.parser)
         val rawFullResponse = StringBuilder()
         stateManager.onEvent(ModelEvent.Start)
+        val api = adapter.backendApi
 
         try {
             val response = call.execute()
@@ -54,51 +61,82 @@ class ClientStream(
 
                 // Создаем процессор через фабрику из контекста
                 val processor = context.streamProcessorFactory(stateManager, stateMachine)
+                val contentType = response.header("Content-Type").orEmpty().lowercase()
 
-                val isStream = response.header("Content-Type")?.contains("text/event-stream") == true
+                // Ollama стримит как ndjson или json, OpenAI/LM Studio как text/event-stream
+                val isStream = contentType.contains("text/event-stream") ||
+                            contentType.contains("application/x-ndjson") ||
+                         contentType.contains("application/json-stream")
+                logger.info("Stream=$isStream")
+
                 if (isStream) {
+                    var counter = 0
                     while (true) {
                         indicator.checkCanceled()
                         val line = source.readUtf8Line() ?: break
+                        val trimmedLine = line.trim()
 
-                        if (line.isNotBlank()) {
-                            rawFullResponse.append(line).append("\n")
+                        // Если строка пустая — это разделитель SSE пакетов!
+                        if (trimmedLine.isEmpty()) {
+                            // Передаем пустую строку в процессор для ОБОИХ бэкендов, чтобы протолкнуть буфер
+                            processor.handleLine("") { event ->
+                                builder.append(event)
+                                onEvent(event)
+                                counter = event.counter
+                            }
+                            continue
                         }
 
-                        // ПРОЦЕССОР ДОЛЖЕН:
-                        // 1. Убрать "data: "
-                        // 2. Склеить куски JSON
-                        // 3. Выдать готовый Event
-                        // Колбэк внутри процессора наполняет наш builder.
-                        processor.handleLine(line) { event ->
+                        // Формируем SSE-строку для контента
+                        val sseCompatibleLine = if (api == BackendApi.OLLAMA_API) {
+                            "data: $trimmedLine"
+                        } else {
+                            line // Для LM Studio сохраняем исходную строку (с префиксами event: или data:)
+                        }
+
+                        rawFullResponse.append(sseCompatibleLine).append("\n")
+
+                        // Отправляем строку с данными в процессор
+                        processor.handleLine(sseCompatibleLine) { event ->
                             builder.append(event)
                             onEvent(event)
+                            counter = event.counter
+                        }
+
+                        // ОБРАБОТКА ДЛЯ OLLAMA: Искусственный пуш пустой строкой после каждого чанка
+                        if (adapter.backendApi == BackendApi.OLLAMA_API) {
+                            processor.handleLine("") { event ->
+                                builder.append(event)
+                                onEvent(event)
+                            }
+                        }
+
+                        // Специфика Ollama: искусственный маркер завершения
+                        if (api == BackendApi.OLLAMA_API && trimmedLine.contains("\"done\":true")) {
+                            val doneMarker = "data: [DONE]"
+                            rawFullResponse.append(doneMarker).append("\n")
+
+                            processor.handleLine(doneMarker) { event ->
+                                builder.append(event)
+                                onEvent(event)
+                                counter = event.counter
+                            }
+                            // Также проталкиваем финал пустой строкой
+                            processor.handleLine("") { event ->
+                                builder.append(event)
+                                onEvent(event)
+                                counter = event.counter
+                            }
+                            break
                         }
                     }
-                    // СОХРАНЯЕМ ДЕБАГ-ЛОГ (SSE протокол)
-                    saveJson(project, "raw_network_stream", rawFullResponse.toString())
+                    saveJson(project, "$api raw_network_stream", rawFullResponse.toString(), ++counter)
                 } else {
                     // Логика для обычного JSON: читаем всё сразу, парсим и выходим
                     val fullJson = source.readUtf8()
                     return context.parser(fullJson)
-
-                    //rawFullResponse.append(fullJson)
-                    //saveJson(project, "raw_json_result", result.raw)
-                    //builder.setRaw(result.raw)
                 }
             }
-
-//            // БИЛДЕР ТЕПЕРЬ СТРОИТ ЧИСТЫЙ ОТВЕТ
-//            val finalResult = builder.build()
-//
-//            // Если хочешь сохранить еще и ЧИСТЫЙ JSON итогового ответа:
-//            saveJson(project, "final_clean_response", finalResult.toRawJson())
-//
-//            val rawData = rawFullResponse.toString()
-//            saveJson(project, "raw_stream_response", rawData)
-//
-//            builder.setRaw(rawData)
-
             return builder.build()
 
         } catch (e: ProcessCanceledException) {
@@ -114,13 +152,8 @@ class ClientStream(
             logger.warn("Stream execution failed", e)
             throw e
         }
-        //return TODO("Provide the return value")
     }
-
-
 }
-
-
 
 @Serializable
 data class ChatEndPayload(
@@ -231,7 +264,6 @@ sealed class StreamPayload {
     @SerialName("response.in_progress") // Явно указываем тип для этого API
     data class ResponseInProgress(val response: FinalResult) : StreamPayload()
 
-
     @Serializable
     @SerialName("message.delta") // Или используйте JsonClassDiscriminator
     data class Message(
@@ -241,6 +273,14 @@ sealed class StreamPayload {
     ) : StreamPayload() {
         val actualContent: String? get() = content ?: delta ?: text
     }
+
+    @Serializable
+    @SerialName("message.start")
+    data object MessageStart : StreamPayload()
+
+    @Serializable
+    @SerialName("message.end")
+    data object MessageEnd : StreamPayload()
 
     @Serializable
     @SerialName("response.output_text.delta") // Явно указываем тип для этого API
@@ -280,8 +320,24 @@ sealed class StreamPayload {
     data class ChatEnd(val result: FinalResult) : StreamPayload()
 
     @Serializable
-    @SerialName("non.stream.chat.end")
-    data class NonStreamChatEnd(val result: FinalResult) : StreamPayload()
+    @SerialName("stream.end")
+    object StreamEnd : StreamPayload()
+
+    @Serializable
+    @SerialName("model_load.start")
+    object LoadStart : StreamPayload()
+
+    @Serializable
+    @SerialName("model_load.end")
+    object LoadEnd : StreamPayload()
+
+    @Serializable
+    @SerialName("prompt_processing.start")
+    object PromptStart : StreamPayload()
+
+    @Serializable
+    @SerialName("prompt_processing.end")
+    object PromptEnd : StreamPayload()
 
     @Serializable
     @SerialName("error")
@@ -296,28 +352,32 @@ sealed class StreamPayload {
     val StreamPayload.eventType: EventType
         get() = when (this) {
             is ChatStart -> EventType.CHAT_START
+            is LoadStart -> EventType.MODEL_LOAD_START
             is LoadProgress -> EventType.MODEL_LOAD_PROGRESS
+            is LoadEnd -> EventType.MODEL_LOAD_END
+            is PromptStart -> EventType.PROMPT_START
             is PromptProgress -> EventType.PROMPT_PROGRESS
+            is PromptEnd -> EventType.PROMPT_END
             is Reasoning -> EventType.REASONING_DELTA
             is ResponseContentPartAdded -> EventType.MESSAGE_START
             is ResponseOutputItemAdded -> EventType.MESSAGE_START
             is ResponseCreated -> EventType.MESSAGE_START
             is ResponseInProgress -> EventType.MESSAGE_DELTA
+            is MessageStart -> EventType.MESSAGE_START
             is Message -> EventType.MESSAGE_DELTA
             is ResponseDelta -> EventType.MESSAGE_DELTA
             is ResponseCompleted -> EventType.MESSAGE_END
             is ResponseOutputItemDone -> EventType.MESSAGE_END
             is ResponseContentPartDone -> EventType.MESSAGE_END
             is ResponseOutputTextDone -> EventType.MESSAGE_END
+            is MessageEnd -> EventType.MESSAGE_END
             is ChatEnd -> EventType.CHAT_END
-            is NonStreamChatEnd -> EventType.NON_STREAM_CHAT_END
+            is StreamEnd -> EventType.CHAT_END
             is Error -> EventType.ERROR
             is Unknown -> EventType.ERROR
         }
 
 }
-
-
 
 data class RawSSEEvent(
     val event: String,
@@ -374,51 +434,167 @@ data class StreamEvent(
     val cleanJson: String? = null,
     var indicatorText: String = "",
     var indicatorFraction: Double? = null,
+    var counter: Int = 0,
 )
 
-class StreamParser(private val project: Project) : JsonFileLogger {
+class StreamParser(private val project: Project, private val api: BackendApi) : JsonFileLogger {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    // 🔹 Счетчик для накопления токенов мыслей Ollama за время текущего стрима
+    private var ollamaReasoningTokens = 0
+
+    @Serializable
+    private data class LMStudioChatEndWrapper(val result: LMStudioResponse)
+
+    @Serializable
+    private data class OllamaError(val error: String)
 
     fun parse(event: RawSSEEvent): StreamEvent? {
-
+        // 1. Сразу определяем базовый тип
         val type = EventType.from(event.event) ?: EventType.ERROR
 
-        // DONE без data
+        // Обработка флага завершения [DONE] (для искусственного маркера Ollama)
         if (event.isDone) {
-            return StreamEvent(type, raw = event.raw)
+            val finalType = if (api == BackendApi.OLLAMA_API) EventType.CHAT_END else type
+            val finalPayload = if (api == BackendApi.OLLAMA_API) StreamPayload.StreamEnd else StreamPayload.Unknown
+            val doneEvent = StreamEvent(
+                type = finalType,
+                content = null,
+                payload = finalPayload,
+                raw = event.raw,
+                cleanJson = ""
+            )
+            return doneEvent
         }
 
         val dataString = event.data ?: return null
 
-        val payload = try {
-            json.decodeFromString<StreamPayload>(dataString)
-        } catch (e: Exception) {
-            logger.warn("Failed parsing JSON", e)
+        // Проверка глобальных ошибок Ollama
+        if (api == BackendApi.OLLAMA_API && dataString.contains("\"error\"") && dataString.contains("not found")) {
+            return try {
+                val errorObj = json.decodeFromString<OllamaError>(dataString)
+                logger.warn("Ollama error detected: ${errorObj.error}")
+                StreamEvent(
+                    type = EventType.ERROR,
+                    content = "Ollama Error: ${errorObj.error}",
+                    payload = StreamPayload.Unknown,
+                    raw = event.raw,
+                    cleanJson = dataString
+                )
+            } catch (e: Exception) { null }
+        }
 
+        val payload = if (api == BackendApi.OLLAMA_API) {
+            // 🔹 Ollama
             try {
-                val cleaned = sanitizeJson(dataString)
-                json.decodeFromString<StreamPayload>(cleaned)
-            } catch (e2: Exception) {
-                logger.warn("Failed parsing cleaned JSON", e2)
+                val chunk = json.decodeFromString<OllamaResponse>(dataString)
+
+                if (chunk.done == true) {
+                    val totalGenTokens = chunk.eval_count ?: 0
+                    val pureOutputTokens = (totalGenTokens - ollamaReasoningTokens).coerceAtLeast(0)
+
+                    val responsePayload = StreamPayload.ResponseCreated(
+                        response = FinalResult(
+                            model_instance_id = chunk.model,
+                            usage = Usage(
+                                inputTokens = chunk.prompt_eval_count ?: 0,
+                                outputTokens = pureOutputTokens, // 🔹 Чистые токены текста
+                                reasoningTokens = ollamaReasoningTokens, // 🔹 Передаем накопленные токены мыслей
+                                totalTokens = (chunk.prompt_eval_count ?: 0) + totalGenTokens,
+                                tokens_per_second = chunk.tokensPerSecond.toFloat(),
+                                time_to_first_token_seconds = chunk.time_to_first_token_seconds.toFloat(),
+                                prompt_tokens_per_second = chunk.promptTokensPerSecond.toFloat(),
+                            )
+                        )
+                    )
+
+                    ollamaReasoningTokens = 0 // Сбрасываем счетчик для следующего запроса
+                    responsePayload
+
+                } else {
+                    val msg = chunk.message
+                    if (msg != null && !msg.thinking.isNullOrEmpty()) {
+                        ollamaReasoningTokens++
+                        StreamPayload.Reasoning(content = msg.thinking)
+                    } else {
+                        StreamPayload.Message(content = msg?.content ?: "")
+                    }
+                }
+            } catch (e: Exception) {
+                logger.warn("Ollama alternative parsing failed: ${e.message}")
                 StreamPayload.Unknown
+            }
+        } else if (api == BackendApi.LM_STUDIO_API && (event.event == "chat.end" || dataString.contains("\"type\":\"chat.end\""))) {
+            // 🔹 LM STUDIO
+            try {
+                val wrapper = json.decodeFromString<LMStudioChatEndWrapper>(dataString)
+                val lmResponse = wrapper.result
+                val lmOutput = lmResponse.output?.firstOrNull()
+
+                StreamPayload.ChatEnd(
+                    result = FinalResult(
+                        model_instance_id = lmResponse.model_instance_id,
+                        output = listOf(
+                            ResponseOutputItem(
+                                content = listOf(ResponseContent(text = lmOutput?.content))
+                            )
+                        ),
+                        stats = lmResponse.stats // Если типы не совпадают, просто маппим поля, но главное — данные уже у нас!
+                    )
+                )
+            } catch (e: Exception) {
+                logger.warn("LM Studio wrapper parsing failed: ${e.message}")
+                StreamPayload.Unknown
+            }
+        } else {
+            // 🔹 OPENAI
+            try {
+                json.decodeFromString<StreamPayload>(dataString)
+            } catch (e: Exception) {
+                logger.warn("Failed parsing JSON ${e.message}, trying sanitized parse")
+                try {
+                    val cleaned = sanitizeJson(dataString)
+                    json.decodeFromString<StreamPayload>(cleaned)
+                } catch (e2: Exception) {
+                    logger.warn("Failed parsing cleaned JSON ${e2.message}")
+                    StreamPayload.Unknown
+                }
             }
         }
 
+        // 🔹 Извлекаем текст (для мыслей берем контент рассуждений)
         val text = when (payload) {
             is StreamPayload.Message -> payload.actualContent
+            is StreamPayload.Reasoning -> payload.content // 👈 Прокидываем текст мыслей дальше
             is StreamPayload.ChatEnd ->
                 payload.result.output?.firstOrNull()?.content?.firstOrNull()?.text
             else -> null
         }
 
-        return StreamEvent(
-            type = type,
+        // 🔹 Корректируем EventType для UI
+        val finalType = when {
+            // Если это финальный пакет Ollama, роняем тип в CHAT_END
+            api == BackendApi.OLLAMA_API && dataString.contains("\"done\":true") -> {
+                logger.info("Ollama stream finished. Switching to CHAT_END.")
+                EventType.CHAT_END
+            }
+            // ⚡ Если это мысли Ollama — выставляем тип логики рассуждений
+            payload is StreamPayload.Reasoning -> EventType.REASONING_DELTA
+            // Если обычный текст Ollama, переключаем на генерацию
+            payload is StreamPayload.Message -> EventType.MESSAGE_DELTA
+            // ⚡ Если это финальный пакет LM Studio/OpenAI — жестко ставим финал чата
+            payload is StreamPayload.ChatEnd -> EventType.CHAT_END
+            else -> type
+        }
+
+        val parseResult = StreamEvent(
+            type = finalType,
             content = text,
             payload = payload,
             raw = event.raw,
             cleanJson = dataString
         )
+        return parseResult
     }
 
     private fun sanitizeJson(input: String): String {
@@ -426,7 +602,6 @@ class StreamParser(private val project: Project) : JsonFileLogger {
             .dropLastWhile { it != '}' && it != ']' }
     }
 }
-
 
 class ResultBuilder(val parser: (String) -> ResponseResult) {
     private var finalPayload: Any? = null
@@ -442,23 +617,14 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
     private val output = StringBuilder()
 
     var progress: Double = 0.0
-
-    //var raw: String? = null
     var model: String? = null
     var rawResponseId: String? = null
     var stats: LMStats? = null
     var usage: Usage? = null
 
     fun append(event: StreamEvent) {
-//        logger.info("ResultBuilder.append: event.type=${event.type}")
-//        logger.info("ResultBuilder.append: event.content=${event.content}")
-//        logger.info("ResultBuilder.append: event.payload=${event.payload}")
-//        logger.info("ResultBuilder.append: event.raw.length=${event.raw?.length}")
-//        logger.info("ResultBuilder.append: event.raw=${event.raw}")
-
         val data = event.payload // допустим, ты передал распарсенный JSON
-        logger.info("ResultBuilder.append: data=$data")
-        //logger.warn("event: $event")
+        //logger.info("ResultBuilder.append: data=$data")
         when (event.type) {
 
             EventType.CHAT_START -> {
@@ -496,7 +662,7 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
 
             EventType.PROMPT_PROGRESS -> {
                 progress = (event.payload as? StreamPayload.PromptProgress)?.progress?: 0.0
-                logger.warn("ResultBuilder: PROMPT_PROGRESS $progress")
+                logger.info("ResultBuilder: PROMPT_PROGRESS $progress")
                 event.indicatorText = String.format("PROMPT %.2f%%", progress * 100.0)
                 event.indicatorFraction = null
             }
@@ -555,10 +721,16 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
 
                 // Если payload это наше новое событие завершения
                 val res = when(val p = event.payload) {
+                    is StreamPayload.ResponseCreated -> p.response
                     is StreamPayload.ResponseCompleted -> p.response
                     is StreamPayload.ChatEnd -> p.result
-                    else -> null
+                    else -> {
+                        logger.info("ResultBuilder: CHAT_END event.content=${event.payload}")
+                        null
+                    }
                 }
+                logger.info("ResultBuilder: CHAT_END" )
+                //logger.info("ResultBuilder: CHAT_END res=$res" )
                 if (res != null) {
                     res.usage.let { this.usage = it}
                     res.stats.let { this.stats = it }
@@ -567,28 +739,8 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
                     this.text = res.output?.flatMap { it.content ?: emptyList() }
                         ?.mapNotNull { it.text }
                         ?.joinToString("")
-
-                    logger.info("ResultBuilder: CHAT_END res=$res" )
                 }
             }
-
-            /*
-            * data class FinalResult(
-    val model_instance_id: String? = null,
-    val response_id: String? = null,
-    val output: List<ResponseOutputItem>? = null, // Изменили тип здесь
-    val stats: LMStats? = null,
-    val usage: Usage? = null
-)
-            * */
-
-
-            EventType.NON_STREAM_CHAT_END -> {
-                logger.info("ResultBuilder: NON_STREAM_CHAT_END")
-                rawContent = data.printToString()
-                logger.info("ResultBuilder: rawContent=$rawContent")
-            }
-
             else -> {
                 logger.warn("ResultBuilder: smthing else event.content=${event.content}")
             }
@@ -596,6 +748,8 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
     }
 
     fun build(): ResponseResult {
+        logger.info("ResultBuilder build enter")
+
         if (rawContent.startsWith("{")) {
             return parser(rawContent) // Теперь тут гарантированно чистый JSON объекта
         }
@@ -604,6 +758,7 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
         // Пытаемся достать текст из финала (если буфер пуст или нужен полный текст)
         val finalText = when (payload) {
             is ChatEndPayload -> payload.data?.output?.firstOrNull()?.text
+            //is StreamPayload.ResponseCreated -> this.output
             // Здесь можно добавить другие типы для других провайдеров
             else -> null
         }
@@ -621,17 +776,22 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
             }
         }
 
+        logger.info("stats=$stats")
+        logger.info("usage=$usage")
+
         // 2. Fallback: если это был обычный SSE стрим с чанками "data:",
         // собираем ResponseResult из накопленных в append() данных
-        return ResponseResult.Success(
+
+        val result = ResponseResult.Success(
             text = finalText?:text?:output.toString(),
             usage = Usage(
-                inputTokens = stats?.input_tokens,
-                outputTokens = stats?.total_output_tokens,
-                reasoningTokens = stats?.reasoning_output_tokens,
-                totalTokens = stats?.total_output_tokens,
-                tokens_per_second = stats?.tokens_per_second,
-                time_to_first_token_seconds = stats?.time_to_first_token_seconds,
+                inputTokens = stats?.input_tokens?:usage?.inputTokens,
+                outputTokens = stats?.total_output_tokens?:usage?.outputTokens,
+                reasoningTokens = stats?.reasoning_output_tokens?: usage?.reasoningTokens,
+                totalTokens = stats?.total_output_tokens?:usage?.totalTokens,
+                tokens_per_second = stats?.tokens_per_second?:usage?.tokens_per_second,
+                time_to_first_token_seconds = stats?.time_to_first_token_seconds?:usage?.time_to_first_token_seconds,
+                prompt_tokens_per_second = usage?.prompt_tokens_per_second,
             ),
             model = model,
             reasoning = reasoning.toString(),
@@ -640,6 +800,7 @@ class ResultBuilder(val parser: (String) -> ResponseResult) {
             durationMs = 0,
             response_id = rawResponseId
         )
+        return result
     }
 
 

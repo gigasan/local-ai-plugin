@@ -254,7 +254,7 @@ class TaskCompositorDialog(
     }
 
     override fun createCenterPanel(): JComponent {
-        logger.info("createCenterPanel enter")
+        //logger.info("createCenterPanel enter")
 
         val rootPanel = JBPanel<JBPanel<*>>(BorderLayout())
 
@@ -570,7 +570,8 @@ class TaskCompositorDialog(
         // Запускаем загрузку моделей сразу при создании панели
         msp.loadModelsAsync(project, projectSettings.backendEndpoint, msp)
         
-        logger.info("createCenterPanel leave")
+        //logger.info("createCenterPanel leave")
+        updateTotalStats()
         return rootPanel
     }
 

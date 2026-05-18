@@ -24,17 +24,17 @@ data class ExecutionContext(
 
 class BackendAdapter(private val project: Project): JsonFileLogger {
     private val provider = project.service<PluginConfigProvider>()
-
+    val backendApi = provider.buildBackendEndpoint().api
     val sseParser = SSEParser(project)
-    val streamParser = StreamParser(project)
-    val responseParser = ResponseParser(project)
+    val streamParser = StreamParser(project, backendApi)
+    val responseParser = ResponseParser(project, backendApi)
+
 
     fun getContext(ctx: ChatContext, stateManager: StateManager, stateMachine: StateMachine): ExecutionContext {
         val baseUrl = provider.buildBaseUrl()
         val endpoint = provider.buildChatEndpoint()
         val apiKey = provider.buildApiKey()
 
-        // Определяем, какой адаптер использовать
         val (request, parser) = when (val backend = provider.buildBackendEndpoint().api to endpoint) {
             BackendApi.LM_STUDIO_API to "/api/v1/chat" ->
                 LmStudioAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
@@ -48,7 +48,6 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
             BackendApi.OPEN_AI_API to "/v1/responses" ->
                 ResponsesAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
 
-            // Здесь можно добавить специфичный парсер, если OpenAI формат отличается
             else ->
                 ChatCompletionsAdapter.toRequest(project, ctx, baseUrl + endpoint, apiKey) to responseParser::parse
         }
@@ -58,7 +57,7 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
             parser = parser,
             streamProcessorFactory = { mgr, machine ->
                 // Возвращаем процессор. Если для LM Studio нужен другой — меняем логику здесь.
-                DefaultStreamProcessor(project, mgr, machine, sseParser, streamParser)
+                DefaultStreamProcessor(project, mgr, machine, sseParser, streamParser, backendApi)
             }
         )
     }
@@ -91,7 +90,7 @@ class BackendAdapter(private val project: Project): JsonFileLogger {
         val backend = provider.buildBackendEndpoint()
 
         // Создаем процессор по умолчанию (OpenAI style)
-        val defaultProcessor = DefaultStreamProcessor(project, stateManager, stateMachine, sseParser, streamParser)
+        val defaultProcessor = DefaultStreamProcessor(project, stateManager, stateMachine, sseParser, streamParser, backendApi)
 
         return when (backend.api to endpoint) {
             BackendApi.LM_STUDIO_API to "/api/v1/chat" ->
@@ -233,17 +232,16 @@ object OllamaAdapter: JsonFileLogger {
             putJsonObject("option") {
                 put("temperature", ctx.temperature)
                 put("num_predict", ctx.maxTokens)
-                put("logprobs", true)
-                put("top_logprobs", 0)
+                //put("logprobs", ctx.logprobs)
+                //put("top_logprobs", 0)
 
             }
             // tools object[]
             // format enum:string json
 
             put("stream", ctx.stream) // default true
-            put("think", ctx.reasoning)
             put("keep_alive", "${ctx.keep_alive}m")
-
+            //put("think", ctx.reasoning)
 
         }
         val provider = project.service<PluginConfigProvider>()

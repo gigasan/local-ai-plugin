@@ -35,3 +35,4 @@ tmp/
 temp/
 json_logs/
 settings/
+.kotlin/

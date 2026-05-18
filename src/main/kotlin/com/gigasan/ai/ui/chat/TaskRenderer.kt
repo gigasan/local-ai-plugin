@@ -1,15 +1,21 @@
 package com.gigasan.ai.ui.chat
 
 import com.gigasan.ai.runtime.AIMetrics
-import com.gigasan.ai.ui.chat.ChatPanel.MarkdownRenderer
 import com.gigasan.ai.ui.chat.HtmlProcessor.normalizeLanguage
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.ui.JBColor
+import com.vladsch.flexmark.ast.FencedCodeBlock
+import com.vladsch.flexmark.ext.tables.TablesExtension
+import com.vladsch.flexmark.html.AttributeProvider
+import com.vladsch.flexmark.html.AttributeProviderFactory
+import com.vladsch.flexmark.html.HtmlRenderer
+import com.vladsch.flexmark.html.renderer.AttributablePart
+import com.vladsch.flexmark.html.renderer.LinkResolverContext
+import com.vladsch.flexmark.parser.Parser
+import com.vladsch.flexmark.util.data.MutableDataSet
 import javax.swing.UIManager
 import java.awt.Color
-import java.awt.dnd.*
-import javax.swing.*
 
 // Вынос UI-логики (renderChatBlocks, buildTaskHtml) в отдельный слой
 // Цель: разделить рендеринг и данные
@@ -20,87 +26,89 @@ private val logger = Logger.getInstance("TaskRenderer")
 class TaskRenderer(
     //private val themeManager: ThemeManager // для получения цветов, стилей и т.д.
 ) {
-    fun render(tasks: List<TaskData>): String {
 
-        logger.info("Rendering ${tasks.size} blocks")
+    private fun generateThemeStyles(): String {
+        // Проверяем, темная ли тема сейчас в IDE
+        val isDark = com.intellij.util.ui.StartupUiUtil.isDarkTheme
 
-        val html = tasks.joinToString("\n\n") { buildHtmlForTask(it) }
-        //logger.info("html=$html")
+        // 1. КОНСТАНТЫ ЦВЕТОВ ДЛЯ ТЕМНОГО И СВЕТЛОГО РЕЖИМОВ
+        val panelBg      = if (isDark) "#191a1c" else "#f2f2f2" // Основной фон чата
+        val textColor    = if (isDark) "#d1d3d9" else "#1f2023" // Основной текст
+        val border       = if (isDark) "#3a3d42" else "#b8bcc2" // Границы и разделители
+        val bubbleBg     = if (isDark) "#141516" else "#D9D9D9" // Фон пузырей сообщений
+        val bubbleText   = if (isDark) "#a7a9ae" else "#333333" // Текст внутри пузырей
 
-        // ==== PRISM =====
+        val codeHeaderBg = if (isDark) "#2b2d30" else "#C5C5C5" // Заголовок блока кода (где кнопки)
+        val codeHeaderCc = if (isDark) "#666666" else "#000000" // Твой цвет для темной и светлой темы
+        val codeBg       = if (isDark) "#1e1f22" else "#F6FDE6" // Фон блоков кода (внутри pre)
+        val inlineCodeBg = if (isDark) "rgba(255, 255, 255, 0.1)" else "rgba(0, 0, 0, 0.05)"
+        val inlineCodeCc = if (isDark) "#e2c08d" else "#b86c11" // Цвет inline-кода
 
-        // scan plain text for language
-        val regex = Regex("```(\\w+)")
-        val allText = tasks.joinToString("\n") { task ->
-            listOf(
-                task.question,
-                "",
-                task.answer
-            ).joinToString("\n")
-        }
+        val footerColor  = if (isDark) "#FFEB3B" else "#FF9800" // статистика
 
-        val rawLanguages = regex.findAll(allText)
-            .map { it.groupValues[1] }
-            .toSet()
+        // НАСТРОЙКА ЖИРНОСТИ (Кнопки и Хедеры)
+        val bodyWeight   = if (isDark) "400" else "500"
+        val codeWeight   = if (isDark) "400" else "500"
 
-        val prismLanguages = rawLanguages
-            .map { normalizeLanguage(it) }
-            .toSet()
+        // Для кнопок в светлой теме ставим честный Bold (700) или Semi-bold (600)
+        val buttonWeight = if (isDark) "300" else "600"
+        val btnTextHex   = if (isDark) "#666666" else "#45464a" // Цвет текста на кнопке (Светло-серый / Темно-серый)
+        val btnBorderHex = if (isDark) "#3a3d42" else "#b8bcc2" // Цвет рамки кнопки
+        val btnBgHoverHex= if (isDark) "#36393e" else "#e3e5e8" // Фон кнопки при наведении мыши
 
-        //logger.info("languages=$languages")
+        // 2. КРАСИВАЯ ПАЛИТРА ДЛЯ КОДА (Синтаксис как в IntelliJ IDEA)
+        val tokenKeyword  = if (isDark) "#cc7832" else "#0033b3" // if, fun, return (оранжевый / благородный синий)
+        val tokenString   = if (isDark) "#6a8759" else "#067d17" // "строки текста" (приглушенный зеленый)
+        val tokenComment  = if (isDark) "#808080" else "#7e8085" // // комментарии (спокойный серый)
+        val tokenNumber   = if (isDark) "#6897bb" else "#1750eb" // 123, true (сине-голубой / яркий синий)
+        val tokenFunction = if (isDark) "#ffc66d" else "#00627a" // имяФункции() (песочный / морская волна)
+        val tokenType     = if (isDark) "#a9b7c6" else "#000000" // Типы данных String, Int
+        val tokenPunct    = if (isDark) "#b4b8c0" else "#5e6166" // Скобки {}, точки, запятые
 
-        return wrapInLayout(html, prismLanguages)
-    }
 
-    private fun buildHtmlForTask(task: TaskData): String {
+        val summaryBgHex   = if (isDark) "#1F2022" else "#e3e5e8"
+        val summaryTextHex = if (isDark) "#d1d3d9" else "#1f2023"
 
-        val description = AIMetrics.buildDescription(
-            request = task.question,
-            content = "",
-            status = task.status,
-            maxLen = 100
-        )
+        // 2. ФОРМИРУЕМ root-блок для CSS
+        return """
+        <style>
+            :root {
+                /* кнопки expand, copy */
+                --btn-text: $btnTextHex;
+                --btn-border: $btnBorderHex;
+                --btn-bg-hover: $btnBgHoverHex;
+                --btn-font-weight: $buttonWeight;
 
-        val dataTaskId = "data-task-id='${task.id}'"
-
-        val htmlText = buildString {
-            append("<details>")
-            append("<summary class='chat-header' ${dataTaskId}>${task.title} ${description}</summary>\n")
-            append("<div class='chat-body'>")
-            append("<div class='chat'>")
-            if (task.question.isNotBlank()) {
-                append("<div class='bubble-user'>")
-                append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
-                append(MarkdownRenderer.toHtml(task.question))
-                append("</div>")
+                --panel-bg: $panelBg;
+                --text-color: $textColor;
+                --border-color: $border;
+                --bubble-bg: $bubbleBg;
+                --bubble-text: $bubbleText;
+                --code-bg: $codeBg;
+                --code-header-bg: $codeHeaderBg;
+                --code-header-text: $codeHeaderCc;
+                --inline-code-bg: $inlineCodeBg;
+                --inline-code-color: $inlineCodeCc;
+                --footer-color: $footerColor;
+                --summary-bg: ${summaryBgHex};
+                --summary-text: ${summaryTextHex};
+                
+                /* жирности */
+                --body-font-weight: $bodyWeight;
+                --code-font-weight: $codeWeight;
+                --code-header-font-weight: $codeWeight;
+                
+                /* Красивые переменные */
+                --token-keyword: $tokenKeyword;
+                --token-string: $tokenString;
+                --token-comment: $tokenComment;
+                --token-number: $tokenNumber;
+                --token-function: $tokenFunction;
+                --token-type: $tokenType;
+                --token-punct: $tokenPunct;
             }
-            if (task.answer.isNotBlank() || task.reasoning.isNotBlank()) {
-                append("<div class='bubble-assistant'>")
-                append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
-                if (task.reasoning.isNotBlank()) {
-                    append("<p>")
-                    append(HtmlProcessor.insertReasoning(task.reasoning.trim()))
-                    append("</p>")
-                }
-                //append("</div>")
-                if (task.answer.isNotBlank()) {
-                    append(MarkdownRenderer.toHtml(task.answer))
-                }
-                append("</div>")
-            }
-            append("</div>")
-            append("</div>")
-            if (task.id.isNotBlank()) {
-                append("<div class='footer'>")
-                append(HtmlProcessor.getFormatedTime(task.id))
-                append("\n\n${task.footer}")
-                append("</div>")
-            }
-            append("</details>\n")
-        }
-
-        val bubbledHtmlText = HtmlProcessor.transformCodeBlocks(htmlText)
-        return bubbledHtmlText
+        </style>
+    """.trimIndent()
     }
 
     private fun wrapInLayout(html: String, languages: Set<String>): String {
@@ -126,8 +134,13 @@ class TaskRenderer(
         for (lang in languages.sorted()) {
             expandLanguages(lang, deps, result)
         }
-
-        val prismCss        = loadResource("css/prism-tomorrow.min.css")
+        val isDark = com.intellij.util.ui.StartupUiUtil.isDarkTheme
+        // Загружаем нужный файл в зависимости от темы IDE
+        val prismCss = if (isDark) {
+            this::class.java.getResource("/css/prism-tomorrow.min.css")?.readText() ?: ""
+        } else {
+            this::class.java.getResource("/css/prism-solarizedlight.css")?.readText() ?: ""
+        }
         val prismCore       = loadResource("css/prism.min.js")
 
         val supportedLanguages = setOf(
@@ -156,6 +169,8 @@ class TaskRenderer(
         val textColor = UIManager.getColor("Label.foreground") ?: JBColor.BLACK
         val codeBg = EditorColorsManager.getInstance().globalScheme.defaultBackground
 
+        //logger.info("Theme panelBg=$panelBg textColor=$textColor codeBg=$codeBg")
+
         val bubbleBg = if (isDarkTheme()) {
             panelBg.adjustBrightness(0.2f)
         } else {
@@ -168,21 +183,91 @@ class TaskRenderer(
             textColor.adjustBrightness(0.8f)
         }
 
+        val themeStyle = generateThemeStyles()
+
         val styledHtml = """
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
+            $themeStyle
             <style>
+                /* --- Стили для кнопок в обычном интерфейсе --- */
+                .header-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 4px; /* Уменьшили расстояние между кнопками с 8px до 4px (стало плотнее) */
+                    margin-right: -4px; /* Отрицательный маржин притягивает блок вплотную к правому краю, компенсируя паддинг summary */
+                    padding: 0;
+                }
+                
+                /* Общий класс для наших кнопок (экспорт и удаление) */
+                .export-task-btn, .delete-task-btn {
+                    background: transparent !important;
+                    border: none !important;
+                    color: var(--btn-text) !important;
+                    font-size: 13px !important; /* Слегка уменьшили размер шрифта/иконки для компактности */
+                    cursor: pointer;
+                    opacity: 0.4;
+                    padding: 2px 4px !important; /* Минимальные внутренние отступы, чтобы кнопки были плотными */
+                    line-height: 1 !important;
+                    transition: all 0.2s ease;
+                }
+                
+                /* Наведение на строку summary проявляет обе кнопки */
+                summary.chat-header:hover .export-task-btn,
+                summary.chat-header:hover .delete-task-btn {
+                    opacity: 0.7;
+                }
+
+                /* Дискета при наведении просто подсвечивается основным текстом */
+                .export-task-btn:hover {
+                    color: var(--text-color) !important;
+                    opacity: 1 !important;
+                    transform: scale(1.1);
+                }
+
+                /* А вот и наш потерянный красный крестик! */
+                .delete-task-btn:hover {
+                    color: #e06c75 !important; /* Красивый пастельно-красный (в стиле One Dark / Darcula) */
+                    opacity: 1 !important;
+                    transform: scale(1.15); /* Чуть больший микро-зум для акцента */
+                }
+
+                /* Стиль кнопки удаления */
+                .delete-task-btn {
+                    background: transparent !important;
+                    border: none !important;
+                    color: var(--btn-text) !important;
+                    font-size: 16px !important; /* Крестик должен быть читаемым */
+                    cursor: pointer;
+                    padding: 0 4px !important;
+                    line-height: 1;
+                    opacity: 0.4;
+                    transition: all 0.2s ease;
+                    font-weight: bold !important;
+                }
+                
+                
                 /* 1. ОБЩИЕ НАСТРОЙКИ (Layout) */
                 body { 
-                    background-color: #191a1c; 
-                    color: #d1d3d9; 
+                    background-color: var(--panel-bg); 
+                    color: var(--text-color); 
                     margin: 0; 
                     padding: 12px 16px; 
-                    font-family: system-ui, -apple-system, sans-serif;
+                    
+                    /* Используем более плотные системные шрифты */
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                     line-height: 1.6;
                     font-size: 13px;
+                
+                    /* Применяем динамическую жирность */
+                    font-weight: var(--body-font-weight);
+                
+                    /* Магия сглаживания Chromium для устранения "тонкости" на светлом фоне */
+                    -webkit-font-smoothing: antialiased;
+                    -moz-osx-font-smoothing: grayscale;
+                    text-rendering: optimizeLegibility;
                 }
             
                 .chat {
@@ -194,50 +279,24 @@ class TaskRenderer(
                 /* 2. ПУЗЫРИ СООБЩЕНИЙ */
                 .bubble-user, .bubble-assistant {
                     padding: 10px 14px;
-                    background: #141516; /* Тёмный фон для обоих */
-                    color: #a7a9ae;
+                    background: var(--bubble-bg); 
+                    color: var(--bubble-text);
                     max-width: 85%;
                 }
             
                 .bubble-user {
                     align-self: flex-start;
                     border-radius: 12px 12px 12px 4px;
-                }
-            
-                /* Контейнер пузыря теперь должен быть относительным для позиционирования кнопки */
-                .bubble-user {
                     position: relative;
                     transition: max-height 0.3s ease-out;
                     overflow: hidden;
                 }
-    
-                /* Класс для свернутого состояния */
+        
                 .bubble-user.collapsed {
-                    max-height: 40px; /* Высота одной строки + отступы */
+                    max-height: 40px; 
                     cursor: pointer;
                 }
-
-                /* Кнопка сворачивания */
-                .collapse-btn {
-                    position: absolute;
-                    top: 4px;
-                    right: 8px;
-                    background: #2d2d2d;
-                    color: #a7a9ae;
-                    border: 1px solid #444;
-                    border-radius: 4px;
-                    font-size: 10px;
-                    cursor: pointer;
-                    opacity: 0.5;
-                    z-index: 20;
-                }
-    
-                .collapse-btn:hover {
-                    opacity: 1;
-                    background: #3d3d3d;
-                }
-    
-                /* Чтобы текст в свернутом виде не обрывался некрасиво */
+        
                 .bubble-user.collapsed::after {
                     content: "";
                     position: absolute;
@@ -245,9 +304,9 @@ class TaskRenderer(
                     left: 0;
                     width: 100%;
                     height: 20px;
-                    background: linear-gradient(transparent, #141516);
+                    background: linear-gradient(transparent, var(--bubble-bg));
                 }
-
+        
                 .bubble-assistant .collapse-btn {
                     left: 8px;
                     right: auto;
@@ -257,6 +316,9 @@ class TaskRenderer(
                     align-self: flex-end;
                     border-radius: 12px 12px 4px 12px;
                     max-width: 90%;
+                    position: relative;
+                    transition: max-height 0.3s ease-out;
+                    overflow: hidden;
                 }
                 .bubble-assistant > :not(.collapse-btn) {
                     margin-top: 10px;
@@ -267,20 +329,12 @@ class TaskRenderer(
                 .bubble-user > :not(.collapse-btn) {
                     margin-top: 10px;
                 }        
-                /* Контейнер пузыря теперь должен быть относительным для позиционирования кнопки */
-                .bubble-assistant {
-                    position: relative;
-                    transition: max-height 0.3s ease-out;
-                    overflow: hidden;
-                }
-    
-                /* Класс для свернутого состояния */
+        
                 .bubble-assistant.collapsed {
-                    max-height: 40px; /* Высота одной строки + отступы */
+                    max-height: 40px; 
                     cursor: pointer;
                 }
                 
-                /* Чтобы текст в свернутом виде не обрывался некрасиво */
                 .bubble-assistant.collapsed::after {
                     content: "";
                     position: absolute;
@@ -288,81 +342,108 @@ class TaskRenderer(
                     left: 0;
                     width: 100%;
                     height: 20px;
-                    background: linear-gradient(transparent, #141516);
+                    background: linear-gradient(transparent, var(--bubble-bg));
                 }
             
-            
                 /* 3. БЛОКИ КОДА (Интеграция с Prism.js) */
-                
                 .code-block pre {
-                    display: block; /* или whatever по умолчанию */
+                    display: block; 
                 }
                 
                 .code-block.closed pre {
                     display: none;
                 }
                 
-                /* Обертка для кнопок (Copy/Collapse) */
                 .code-header {
                     display: flex;
-                    justify-content: flex-end;    /* Кнопки прижаты к правому краю */
+                    justify-content: flex-end;    
                     align-items: center;
-                    background: #2b2d30;          /* Цвет заголовка чуть светлее основного фона */
+                    background: var(--code-header-bg);          
                     padding: 4px 8px;
                     border-radius: 6px 6px 0 0;
                     gap: 4px;
                 }
                 
-                /* Название языка слева (если оно у тебя в <span>) */
                 .code-header span {
-                    margin-right: auto;           /* Отталкивает кнопки вправо */
-                    color: #6a6a6a;
+                    margin-right: auto;           
+                    color: var(--code-header-text);
                     font-size: 11px;
-                    font-family: monospace;
+                    font-family: ui-monospace, monospace;
                     text-transform: lowercase;
+                    font-weight: 600; /* Делаем заголовок полужирным (Semi-bold) */
+                    letter-spacing: 0.3px; /* Немного раздвигаем буквы для читаемости */
                 }
                 
-                .code-header button {
-                    background: transparent;      /* Убираем массивный фон */
-                    color: #7a7a7a;               /* Делаем текст темнее/серее */
-                    border: 1px solid #444;       /* Тонкая темная рамка */
-                    border-radius: 3px;
-                    font-size: 10px;              /* Уменьшаем шрифт */
-                    padding: 2px 6px;             /* Минимальные отступы */
+                /* ==========================================================================
+                   ОБЩИЕ СТИЛИ ДЛЯ ВСЕХ КНОПОК (Copy, Collapse на коде и Collapse на баблах)
+                   ========================================================================== */
+                .code-header button, .collapse-btn {
+                    background: transparent !important;
+                    
+                    /* Управляем цветом текста и рамки через новые переменные */
+                    color: var(--btn-text) !important;
+                    border: 1px solid var(--btn-border) !important;
+                    
+                    font-weight: var(--btn-font-weight) !important;
+                    font-size: 10px;
+                    font-family: system-ui, -apple-system, sans-serif;
+                    letter-spacing: 0.4px;
+                    padding: 2px 6px;
                     cursor: pointer;
-                    transition: all 0.2s ease;    /* Плавное изменение при наведении */
-                    margin-left: 4px;             /* Расстояние между кнопками */
+                    transition: all 0.2s ease;
+                    -webkit-font-smoothing: antialiased;
                 }
-
-                .code-header button:hover {
-                    color: #afb1b3;               /* При наведении текст становится светлее */
-                    background: #36393e;          /* И чуть подсвечивается фон */
-                    border-color: #555;
+                
+                /* ОБЩИЙ ХОВЕР (при наведении мышки) */
+                .code-header button:hover, .collapse-btn:hover {
+                    background-color: var(--btn-bg-hover) !important;
+                    border-color: var(--btn-text) !important;
+                    opacity: 1 !important; /* Убираем прозрачность полностью */
+                }
+                
+                /* ==========================================================================
+                   УНИКАЛЬНЫЕ СТИЛИ (Специфичные настройки для каждого типа кнопок)
+                   ========================================================================== */
+                
+                /* 1. Кнопки внутри заголовка кода */
+                .code-header button {
+                    border-radius: 3px;
+                    margin-left: 4px;
+                }
+                
+                /* 2. Кнопка сворачивания самого пузыря сообщения */
+                .collapse-btn {
+                    position: absolute;
+                    top: 4px;
+                    right: 8px;
+                    border-radius: 4px;
+                    opacity: 0.6; /* Делаем её чуть приглушенной по умолчанию, пока не навели мышь */
+                    z-index: 20;
                 }
                 
                 pre {
-                    /* 1. Вместо переноса строк возвращаем скролл */
                     white-space: pre !important; 
                     overflow-x: auto !important; 
-                    
-                    /* 2. Ограничиваем ширину, чтобы блок не распирал чат */
                     max-width: 100%;
                     display: block;
-                
-                    /* 3. Оформление */
-                    background-color: #1e1f22;
+                    background-color: var(--code-bg) !important;
+                    color: var(--text-color);
                     padding: 12px;
                     border-radius: 6px;
                     margin: 8px 0;
+                    
+                    /* Настройки шрифта кода */
+                    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+                    font-weight: var(--code-font-weight);
+                    -webkit-font-smoothing: antialiased;
                 }
                 
-                /* Настройка полосы прокрутки (scrollbar), чтобы она была тонкой и аккуратной */
                 pre::-webkit-scrollbar {
-                    height: 4px; /* Горизонтальный скролл будет тонким */
+                    height: 4px; 
                 }
                 
                 pre::-webkit-scrollbar-thumb {
-                    background: #3e4043;
+                    background: var(--border-color);
                     border-radius: 4px;
                 }
                 
@@ -374,23 +455,22 @@ class TaskRenderer(
                     word-wrap: break-word;
                 }
             
-                /* Настройка самого блока кода */
                 pre[class*="language-"] {
-                    margin: 0 0 12px 0 !important; /* Убираем внешние отступы Prism */
+                    margin: 0 0 12px 0 !important; 
                     padding: 12px !important;
-                    border-radius: 0 0 6px 6px; /* Скругляем только низ, если есть хедер */
-                    background: #1e1f22 !important; /* Цвет как в IntelliJ */
+                    border-radius: 0 0 6px 6px; 
+                    background: var(--code-bg) !important; 
                     font-size: 13px !important;
                     line-height: 1.5;
-                    white-space: pre-wrap !important; /* Если Prism все-таки подцепился, убеждаемся, что он тоже переносит */
+                    font-weight: var(--code-font-weight) !important;
                 }
             
                 /* Inline код (внутри текста) */
                 :not(pre) > code {
-                    background-color: rgba(255, 255, 255, 0.1) !important;
+                    background-color: var(--inline-code-bg) !important;
                     padding: 2px 5px !important;
                     border-radius: 4px;
-                    color: #e2c08d !important; /* Выделяем цветом как в IDE */
+                    color: var(--inline-code-color) !important; 
                     font-family: ui-monospace, 'Cascadia Mono', monospace;
                     font-size: 0.95em;
                 }
@@ -398,29 +478,53 @@ class TaskRenderer(
                 /* 4. ЭЛЕМЕНТЫ ИНТЕРФЕЙСА (Details, Footer) */
                 details {
                     margin: 12px 0;
-                    border-left: 2px solid #3e4043;
+                    border-left: 2px solid var(--border-color);
                     padding-left: 12px;
                 }
             
-                summary { /* заголовок чата со статусом */
+                summary { 
                     cursor: pointer;
                     padding: 6px 10px;
-                    background-color: rgba(255, 255, 255, 0.03);
+                    
+                    background-color: var(--summary-bg) !important;
+                    color: var(--summary-text) !important;
                     border-radius: 10px;
-                    font-weight: 400;
-                    color: #d1d3d9;
+                    font-weight: var(--body-font-weight);
+                    
+                    /* МЕНЯЕМ ТУТ: Включаем flex, чтобы раскидать текст и крестик по краям */
+                    display: flex !important;       
+                    justify-content: space-between; 
+                    align-items: center;            
+                    padding-right: 28px !important; /* Отступ справа, чтобы не наезжать на стрелочку details */
+                    position: relative;
                 
-                    /* Новые свойства для фиксации в одну строку */
-                    white-space: nowrap;      /* Запрещает перенос строки */
-                    overflow: hidden;         /* Скрывает текст, выходящий за пределы */
-                    text-overflow: ellipsis;  /* Добавляет троеточие в конце (...) */
-                    display: list-item;       /* Важно сохранить для работы стрелочки раскрытия */
+                    -webkit-font-smoothing: antialiased;                         
                 }
                 
+                summary:hover {
+                    filter: brightness(1.1); 
+                }
+                
+                /* Контейнер summary делаем flex, чтобы легко раскидать текст и крестик */
+                summary.chat-header {
+                    display: flex !important;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding-right: 28px !important; /* Даем место справа, чтобы стрелочка раскрытия details не наезжала */
+                    position: relative;
+                }
+
+                .task-title-text {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    margin-right: 8px;
+                }
+
                 .chat-header {
                     padding: 10px;
-                    background: #1f2023;
-                    border-bottom: 1px solid #2b2d30;
+                    background: var(--panel-bg);
+                    border-bottom: 1px solid var(--border-color);
                 }
                 
                 .chat-body {
@@ -432,59 +536,84 @@ class TaskRenderer(
                     font-size: 11px;
                     font-family: monospace;
                     font-weight: 800;
-                    color: #FFEB3B;
+                    color: var(--footer-color);
                 }
                 
-                /* Основные стили таблиц */
                 table {
                     width: 100%;
                     border-collapse: collapse;
                     margin: 16px 0;
-                    font-family: var(--jb-font-family, sans-serif);
-                    font-size: var(--jb-font-size, 13px);
-                    color: var(--jb-foreground, #afb1b3);
+                    font-size: 13px;
+                    color: var(--text-color);
                 }
                 
-                /* Границы и отступы */
                 th, td {
-                    border: 1px solid #45494a; /* Цвет из стандартной темы Darcula */
+                    border: 1px solid var(--border-color); 
                     padding: 8px 12px;
                     text-align: left;
                     line-height: 1.4;
                 }
                 
-                /* Заголовки */
                 th {
-                    background-color: rgba(0, 0, 0, 0.2); /* Чуть темнее для контраста */
+                    background-color: var(--code-header-bg); 
                     font-weight: bold;
-                    color: var(--jb-label-foreground, #bbbbbb);
                 }
                 
-                /* Зебра (опционально, для длинных таблиц) */
                 tr:nth-child(even) {
-                    background-color: rgba(255, 255, 255, 0.03);
+                    background-color: var(--code-bg);
+                    opacity: 0.6;
                 }
                 
-                /* Утилиты для текста */
                 p { 
                     margin: 8px 0; 
                     line-height: 1.5;
                 }
                 
-                /* принудительный отступ после блока кода для перекрытия Prism */
                 .code-block {
                     display: block;
-                    margin-bottom: 12px !important; /* Отступ после всего блока с кодом */
+                    margin-bottom: 12px !important; 
                     clear: both; 
                 }
-
-                /* На всякий случай обнуляем отступы у Prism, чтобы они не суммировались */
+        
                 .code-block pre[class*="language-"] {
                     margin-bottom: 0 !important; 
                 }
             </style>
+            
             <!-- Prism.js — лёгкая и красивая подсветка кода -->
-            <style> $prismCss </style>
+            <style> 
+            $prismCss
+            /* ПЕРЕОПРЕДЕЛЕНИЕ СТИЛЕЙ PRISM ДЛЯ ПОДДЕРЖКИ ТЕМ */
+            .token.keyword, .token.boolean, .token.operator, .token.important {
+                color: var(--token-keyword) !important;
+                font-weight: bold !important;
+            }
+            .token.string, .token.char, .token.attr-value, .token.regex {
+                color: var(--token-string) !important;
+            }
+            .token.comment, .token.prolog, .token.doctype, .token.cdata {
+                color: var(--token-comment) !important;
+                font-style: italic !important;
+            }
+            .token.number, .token.constant, .token.symbol, .token.inserted {
+                color: var(--token-number) !important;
+            }
+            .token.function, .token.attr-name, .token.selector {
+                color: var(--token-function) !important;
+            }
+            .token.class-name, .token.type, .token.tag {
+                color: var(--token-type) !important;
+            }
+            .token.punctuation {
+                color: var(--token-punct) !important;
+            }
+
+            /* Убираем дефолтную тень текста, которую Prism любит пихать во все скачанные темы */
+            .token {
+                text-shadow: none !important;
+                background: transparent !important;
+            }
+            </style>
             <script> $prismCore </script>
             $prismLangScripts
             <!-- Добавь другие языки при необходимости: javascript, xml, json, bash и т.д. -->
@@ -541,26 +670,99 @@ class TaskRenderer(
         """.trimIndent()
         //LOG.info("styledHtml=$styledHtml")
         return styledHtml
+    }
 
-        // Инжектим taskHandlers.js (лучше делать после loadHTML, а не сразу)
-        //        try {
-        //            val jsCode = this::class.java.getResource("/js/taskHandlers.js")?.readText()
-        //                ?: throw kotlinx.io.files.FileNotFoundException("taskHandlers.js not found in resources")
-        //
-        //            // Генерируем реальный JS-код для моста
-        //            val actualInject = jsQuery.inject("selection")
-        //
-        //            // Заменяем метку в тексте файла на рабочий код
-        //            val finalJsCode = jsCode.replace("PLACEHOLDER_FOR_INJECT", actualInject)
-        //
-        //            // Небольшая задержка, чтобы DOM был готов
-        //            SwingUtilities.invokeLater {
-        //                jbCefBrowser.cefBrowser.executeJavaScript(finalJsCode, "", 0)
-        //            }
-        //        } catch (e: Exception) {
-        //            logger.warn("Failed to load taskHandlers.js", e)
-        //        }
-        //       scrollToBottom()
+
+    fun render(tasks: List<TaskData>): String {
+
+        logger.info("Rendering ${tasks.size} blocks")
+
+        val html = tasks.joinToString("\n\n") { buildHtmlForTask(it) }
+        //logger.info("html=$html")
+
+        // ==== PRISM =====
+
+        // scan plain text for language
+        val regex = Regex("```(\\w+)")
+        val allText = tasks.joinToString("\n") { task ->
+            listOf(
+                task.question,
+                "",
+                task.answer
+            ).joinToString("\n")
+        }
+
+        val rawLanguages = regex.findAll(allText)
+            .map { it.groupValues[1] }
+            .toSet()
+
+        val prismLanguages = rawLanguages
+            .map { normalizeLanguage(it) }
+            .toSet()
+
+        //logger.info("languages=$languages")
+        return wrapInLayout(html, prismLanguages)
+    }
+
+    private fun buildHtmlForTask(task: TaskData): String {
+
+        val description = AIMetrics.buildDescription(
+            model = task.model,
+            request = task.question,
+            content = "",
+            status = task.status,
+            maxLen = 100
+        )
+
+        val dataTaskId = "data-task-id='${task.id}'"
+        val printer = "💾"
+        val close = "×"
+        val htmlText = buildString {
+            append("<details>")
+
+            append("<summary class='chat-header' ${dataTaskId}>")
+            append("<span class='task-title-text'>${task.title} ${description}</span>")
+            append("<div class='header-actions'>") // Обернем кнопки в контейнер для удобства
+            append("  <button class='export-task-btn' data-task-id='${task.id}' title='Экспорт в Markdown'>$printer</button>")
+            append("  <button class='delete-task-btn' data-delete-id='${task.id}'>$close</button>")
+            append("</div>")
+            append("</summary>\n")
+
+            append("<div class='chat-body'>")
+            append("<div class='chat'>")
+            if (task.question.isNotBlank()) {
+                append("<div class='bubble-user'>")
+                append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
+                append(MarkdownRenderer.toHtml(task.question))
+                append("</div>")
+            }
+            if (task.answer.isNotBlank() || task.reasoning.isNotBlank()) {
+                append("<div class='bubble-assistant'>")
+                append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
+                if (task.reasoning.isNotBlank()) {
+                    append("<p>")
+                    append(HtmlProcessor.insertReasoning(task.reasoning.trim()))
+                    append("</p>")
+                }
+                //append("</div>")
+                if (task.answer.isNotBlank()) {
+                    append(MarkdownRenderer.toHtml(task.answer))
+                }
+                append("</div>")
+            }
+            append("</div>")
+            append("</div>")
+            if (task.id.isNotBlank()) {
+                append("<div class='footer'>")
+                append(HtmlProcessor.getFormatedTime(task.id))
+                append("\n\n${task.footer}")
+                append("</div>")
+            }
+            append("</details>\n")
+        }
+
+        val bubbledHtmlText = HtmlProcessor.transformCodeBlocks(htmlText)
+        return bubbledHtmlText
     }
 
 }
@@ -593,4 +795,40 @@ fun Color.adjustBrightness(factor: Float): Color {
     Color.RGBtoHSB(red, green, blue, hsb)
     hsb[2] = (hsb[2] * factor).coerceIn(0f, 1f)
     return Color.getHSBColor(hsb[0], hsb[1], hsb[2])
+}
+
+
+fun Color.toHex() = "#%02x%02x%02x".format(red, green, blue)
+
+object MarkdownRenderer {
+    val options = MutableDataSet().set(Parser.EXTENSIONS, listOf(TablesExtension.create()))
+    private val parser = Parser.builder(options).build()
+    private val renderer = HtmlRenderer.builder(options)
+        .escapeHtml(true)
+        .attributeProviderFactory(object : AttributeProviderFactory {
+
+            override fun apply(context: LinkResolverContext): AttributeProvider {
+                return AttributeProvider { node, part, attributes ->
+                    if (node is FencedCodeBlock && part == AttributablePart.NODE) {
+                        val lang = node.info.toString().trim()
+                        if (lang.isNotEmpty()) {
+                            attributes.addValue("class", "language-$lang")
+                        }
+                    }
+                }
+            }
+
+            override fun getBeforeDependents(): Set<Class<*>>? = null
+
+            override fun getAfterDependents(): Set<Class<*>>? = null
+
+            override fun affectsGlobalScope(): Boolean = false
+
+        })
+        .build()
+
+    fun toHtml(markdown: String): String {
+        val document = parser.parse(markdown)
+        return renderer.render(document)
+    }
 }

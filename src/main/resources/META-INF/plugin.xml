@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.gigasan.ai</id>
     <name>Local AI Chat</name>
-    <version>0.5.0</version>
+    <version>1.0.0</version>
     <vendor url="https://github.com/gigasan">GigaSan</vendor>
 
     <description>
@@ -33,18 +33,33 @@
     </extensions>
 
     <actions>
-        <group id="LocalAIGroup"
+        <group id="LocalAIEditorGroup"
                text="Local AI"
                popup="true">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </group>
 
-        <action id="LocalAI.Enqueue"
+        <action id="com.gigasan.ai.actions.EnqueueAction"
                 class="com.gigasan.ai.actions.EnqueueAction"
-                text="Enqueue the Task Local AI Model"
-                description="Send selected text into AI task">
-            <add-to-group group-id="LocalAIGroup" anchor="last"/>
+                text="Enqueue the Task"
+                description="Send selected text into Task Compositor">
+            <add-to-group group-id="LocalAIEditorGroup" anchor="last"/>
         </action>
+
+        <group id="LocalAIProjectViewGroup"
+               text="Local AI"
+               popup="true">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </group>
+
+        <action id="com.gigasan.ai.actions.EnqueueFileAction"
+                class="com.gigasan.ai.actions.EnqueueFileAction"
+                text="Add File to Task"
+                description="Reads file and adds it to Task Compositor">
+            <!-- Добавляем в контекстное меню дерева проекта -->
+            <add-to-group group-id="LocalAIProjectViewGroup" anchor="last"/>
+        </action>
+
     </actions>
 
     <applicationListeners>

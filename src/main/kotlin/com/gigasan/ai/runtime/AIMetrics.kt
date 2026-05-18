@@ -74,6 +74,7 @@ object AIMetrics {
     // SIMPLE DESCRIPTION BUILDER
     // -----------------------------
     fun buildDescription(
+        model: String,
         request: String,
         content: String,
         status: TaskStatus,
@@ -89,7 +90,7 @@ object AIMetrics {
             }
         }
 
-        val statusLine = status.name + ": "
+        val statusLine = status.name + "($model): "
         val requestLine = truncate(request, maxLen) + " "
         val contentLine = truncate(content, maxLen)
 
@@ -110,14 +111,8 @@ object AIMetrics {
         val reasoning = usage?.reasoningTokens
         val output = usage?.outputTokens
 
-        val result = if (output != null && reasoning != null) {
-            output - reasoning
-        } else {
-            null
-        }
-
-        val total = if (input != null && result != null && reasoning != null) {
-            val sum = input + result + reasoning
+        val total = if (input != null && output != null && reasoning != null) {
+            val sum = input + output + reasoning
             "; total=$sum"
         } else {
             ""
@@ -137,6 +132,6 @@ object AIMetrics {
 
         val header = parts.joinToString("; ")
 
-        return "$header tokens: input=$input; reasoning=$reasoning; output=$result$total ✔"
+        return "$header tokens: input=$input; reasoning=$reasoning; output=$output$total ✔"
     }
 }

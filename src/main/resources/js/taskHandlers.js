@@ -13,7 +13,11 @@
             const taskId = el.getAttribute('data-task-id');
             if (!taskId) return;
 
-            el.addEventListener("click", () => {
+            el.addEventListener("click", (e) => {
+                // Если кликнули именно на кнопку удаления, игнорируем обычный клик по плашке
+                if (e.target.classList.contains('delete-task-btn')) {
+                    return;
+                }
                 window.taskBridge?.send("click:" + taskId);
             });
 
@@ -24,6 +28,36 @@
             el.addEventListener("mouseleave", () => {
                 window.taskBridge?.send("hover:exit");
             });
+
+            // Находим кнопку удаления ИМЕННО внутри этого конкретного summary
+            const deleteBtn = el.querySelector('.delete-task-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener("click", (e) => {
+                    e.preventDefault();  // Блокируем стандартное поведение details (раскрытие)
+                    e.stopPropagation(); // Блокируем всплытие события (чтобы не сработал click на самом summary)
+
+                    const deleteId = deleteBtn.getAttribute('data-delete-id');
+                    if (deleteId) {
+                        // Отправляем в Kotlin команду на удаление
+                        window.taskBridge?.send("delete:" + deleteId);
+                    }
+                });
+            }
+
+            const exportBtn = el.querySelector('.export-task-btn');
+            if (exportBtn) {
+                exportBtn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    e.stopPropagation(); // Чтобы details не закрывался
+
+                    const taskId = exportBtn.getAttribute('data-task-id');
+                    if (taskId) {
+                        // Отправляем команду экспорта напрямую в Kotlin
+                        window.taskBridge?.send("export:" + taskId);
+                    }
+                });
+            }
+
         });
     }
 

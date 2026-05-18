@@ -58,7 +58,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
     override fun getDisplayName(): String = "Local AI Settings"
 
     override fun createPanel(): DialogPanel {  // ← Kotlin UI DSL Version 2
-        logger.info("createPanel enter")
+        //logger.info("createPanel enter")
         lateinit var apiKeyField: Cell<JBPasswordField> // Ссылка на ячейку с полем
 
         val selectedEndpoint = projectSettingsService.state.backendEndpoint
@@ -94,7 +94,6 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
 
         // После создания backendModel и до collapsibleGroup
         updateDependentCombos(projectSettingsService.state.backendEndpoint, msp.endpointSettings, modelCache)
-        updateInstruction(instructionsService)
 
         myPanel = panel {
             // Регистрируем внешнюю панель в жизненном цикле этой DSL панели
@@ -254,6 +253,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                 }
             }
 
+
             collapsibleGroup("Chat Settings (Project Dependent)") {
                 row("Instruction:") {
                     chatInstructionCombo = comboBox(chatInstructionsModel)
@@ -272,7 +272,7 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
                             }
                         )
                         .component
-
+                    updateInstruction(instructionsService)
                 }
             }.apply {
                 // Разворачиваем группу сразу после создания
@@ -304,32 +304,31 @@ class PluginSettingsConfigurable(val project: Project) : BoundConfigurable("Loca
 
             // Кастомные callbacks
             onApply {
-                logger.info("onApply")
+                //logger.info("onApply")
                 modelSettingsPanel.apply()
                 instructionsSettingsPanel.apply()
                 projectSettingsService.notifyChange(project)
             }
             onReset {
-                logger.info("onReset")
+                //logger.info("onReset")
                 modelSettingsPanel.reset()
                 instructionsSettingsPanel.reset()
             }
 
         }
 
-        logger.info("createPanel leave")
+        //logger.info("createPanel leave")
         return myPanel
     }
-
 
     private fun updateInstruction(instructionsService: InstructionsService) {
         // chatInstruction
         val newInstructions = instructionsService.state.instructions
         chatInstructionsModel.update(newInstructions)
-        val chatInstructonToSelect = newInstructions.firstOrNull { it == instructionsService.state.selectedInstruction }
-        instructionsService.state.selectedInstruction = chatInstructonToSelect?:""
+        val chatInstructionToSelect = newInstructions.firstOrNull { it == instructionsService.state.selectedInstruction }
+        instructionsService.state.selectedInstruction = chatInstructionToSelect?:""
         if (::chatInstructionCombo.isInitialized) {
-            chatInstructionCombo.selectedItem = chatInstructonToSelect
+            chatInstructionCombo.selectedItem = chatInstructionToSelect
         }
     }
 

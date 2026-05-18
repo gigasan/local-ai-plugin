@@ -78,7 +78,6 @@ enum class BackendEndpoint(val engine: BackendEngine, val api: BackendApi) {
             OLLAMA_ANTHROPIC_ENDPOINT -> mutableListOf("/v1/models")
             OPEN_AI_ENDPOINT -> mutableListOf("/v1/models")
             CLAUDE_ENDPOINT -> mutableListOf("/v1/models")
-            else -> mutableListOf("")
         }
 
     // MODEL INFO (GET)

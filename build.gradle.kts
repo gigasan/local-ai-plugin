@@ -1,7 +1,7 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 val targetVersion = providers.gradleProperty("targetVersion")
-    .getOrElse("2026.1")   // версия по умолчанию
+    .getOrElse("2026.1")
 
 plugins {
     kotlin("jvm") version "2.3.0"
@@ -33,6 +33,7 @@ dependencies {
 }
 
 intellijPlatform {
+    buildSearchableOptions = false
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "253"      // с 2025.3.2 и новее
@@ -45,25 +46,21 @@ kotlin {
     jvmToolchain(21)
 }
 
-// Убираем ненужные предупреждения при сборке
-tasks.buildSearchableOptions {
-    enabled = false
-}
-
-// Задача сборки
 tasks {
     buildPlugin {
-        // архив будет build\distributions\local-ai-plugin.zip
+        // build\distributions\local-ai-plugin.zip
     }
     runIde {
-        // Internal Mode для песочницы
+        // Internal Mode for sandbox
         systemProperty("idea.is.internal", "true")
 
-        // Можно выделить больше памяти для тестов
         jvmArgs("-Xmx2G")
-
-        // Это поможет скрыть часть логов про Jakarta/Spring
-        jvmArgs("-Didea.load.plugins.category=false")
+        jvmArgs("-Dide.browser.jcef.out-of-process.enabled=false")
+        jvmArgs("-Dide.browser.jcef.gpu.disable=false")
+        jvmArgs("-Dide.browser.jcef.enabled=true")
+        jvmArgs("-Dide.browser.jcef.command.line.args=--ignore-gpu-blocklist --enable-gpu-rasterization --plugin-policy=everywhere")
+        jvmArgs("-Didea.diagnostic.opentelemetry.metrics.file=")
+        jvmArgs("-Didea.diagnostic.opentelemetry.meters.file.json=")
     }
 }
 val compileKotlin: KotlinCompile by tasks

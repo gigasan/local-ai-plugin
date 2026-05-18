@@ -22,7 +22,7 @@ class Client(private val project: Project) {
         project.service<PluginConfigProvider>()
     }
 
-    private val responseParser by lazy  { ResponseParser(project) }
+    private val responseParser by lazy  { ResponseParser(project, provider.buildBackendEndpoint().api) }
 
     fun send(ctx: ChatContext): ResponseResult {
         val baseUrl = provider.buildBaseUrl()

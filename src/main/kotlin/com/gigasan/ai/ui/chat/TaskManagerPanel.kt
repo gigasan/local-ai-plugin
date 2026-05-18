@@ -1,6 +1,12 @@
 package com.gigasan.ai.ui.chat
 
+import com.gigasan.ai.config.PluginConfigProvider
+import com.gigasan.ai.runtime.HttpClientProvider
+import com.gigasan.ai.runtime.LocalAIService
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
+import com.intellij.platform.ide.progress.ModalTaskOwner.project
 import com.intellij.ui.JBColor
 import javax.swing.*
 import java.awt.*
@@ -9,6 +15,7 @@ import java.awt.event.MouseEvent
 import java.awt.event.MouseAdapter
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
+import javax.swing.text.JTextComponent
 
 
 enum class TaskStatus {
@@ -34,16 +41,17 @@ data class TaskData(
     //
     var reasoning: String,
     var answer: String,
+    var model: String,
 )
 
-class TaskManagerPanel : JPanel() {
+class TaskManagerPanel(var project: Project) : JPanel() {
     var onTasksChanged: (() -> Unit)? = null
 
     val taskList = mutableListOf<TaskData>()
     private val taskComponents = mutableMapOf<String, JPanel>()
 
     private val logger = Logger.getInstance("TaskManagerPanel")
-
+    private val provider = project.service<PluginConfigProvider>()
     // Панель с задачами
     private val tasksPanel: JPanel = object : JPanel(), Scrollable {
 
@@ -144,6 +152,39 @@ class TaskManagerPanel : JPanel() {
         }
     }
 
+    fun sendTask(task: TaskData) {
+        val url = provider.buildBaseUrl() + provider.buildChatEndpoint()
+        val model = provider.buildChatModel()
+
+        val clientOk = HttpClientProvider.client
+        val localAIService = LocalAIService(project)
+        val requestOk = localAIService.createRequest(url, model, "Write a short bedtime story about a unicorn.")
+        val responseOk = clientOk.newCall(requestOk).execute()
+        println(responseOk.body?.string())
+    }
+
+    fun addContextMenu(textComponent: JTextComponent) {
+        val menu = JPopupMenu()
+
+        val cutItem = JMenuItem("Вырезать").apply { addActionListener { textComponent.cut() } }
+        val copyItem = JMenuItem("Копировать").apply { addActionListener { textComponent.copy() } }
+        val pasteItem = JMenuItem("Вставить").apply { addActionListener { textComponent.paste() } }
+        val deleteItem = JMenuItem("Удалить").apply { addActionListener { textComponent.replaceSelection("") } }
+        val clearItem = JMenuItem("Очистить всё").apply { addActionListener { textComponent.text = "" } }
+
+        menu.add(cutItem)
+        menu.add(copyItem)
+        menu.add(pasteItem)
+        menu.add(deleteItem)
+        menu.addSeparator()
+        menu.add(clearItem)
+
+        textComponent.addMouseListener(object : MouseAdapter() {
+            override fun mousePressed(e: MouseEvent) { if (e.isPopupTrigger) menu.show(e.component, e.x, e.y) }
+            override fun mouseReleased(e: MouseEvent) { if (e.isPopupTrigger) menu.show(e.component, e.x, e.y) }
+        })
+    }
+
     private fun createTaskPanel(task: TaskData, visible: Boolean=false): JPanel {
         val panel = JPanel(BorderLayout())
         panel.border = BorderFactory.createLineBorder(Color.GRAY, 1)
@@ -173,7 +214,7 @@ class TaskManagerPanel : JPanel() {
                     onTasksChanged?.invoke()
                 }
             })
-            ChatPanel.instance?.addContextMenu(area)
+            addContextMenu(area)
         }
 
         // Верхняя строка — description
@@ -217,7 +258,8 @@ class TaskManagerPanel : JPanel() {
         val sendBtn = createIconButton("➤", "Отправить")
         sendBtn.preferredSize = btnSize
         sendBtn.addActionListener {
-            ChatPanel.instance?.sendTask(task)
+            //ChatPanel.instance?.sendTask(task)
+            sendTask(task)
             task.status = TaskStatus.SENT
             panel.isVisible = false
             //tasksPanel.remove(panel)
@@ -290,6 +332,11 @@ class TaskManagerPanel : JPanel() {
     fun getTasksAt(indices: List<Int>): List<TaskData> {
         getAllTasks()
         return indices.mapNotNull { taskList.getOrNull(it) }
+    }
+
+    fun getTasksById(id: String): TaskData? {
+        val taskList = getAllTasks()
+        return taskList.find { it.id == id }
     }
 
     data class IconText(
