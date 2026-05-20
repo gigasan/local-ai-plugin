@@ -4,9 +4,11 @@ import com.gigasan.ai.actions.AskAction
 import com.gigasan.ai.actions.AutoSearchToggleAction
 import com.gigasan.ai.actions.CleanChatAction
 import com.gigasan.ai.actions.LoadResponseAction
+import com.gigasan.ai.actions.ModelInfoAction
 import com.gigasan.ai.actions.TaskCompositorAction
 import com.gigasan.ai.config.PluginConfigProvider
 import com.gigasan.ai.config.storage.PluginSettingsService
+import com.gigasan.ai.core.isDarkTheme
 import com.gigasan.ai.runtime.AIMetrics
 import com.gigasan.ai.runtime.BackendAdapter
 import com.gigasan.ai.runtime.ChatRequestBuilder
@@ -159,6 +161,9 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         if (settings.state.enableTaskCompositor) {
             mainGroup.add(TaskCompositorAction())
         }
+        if (settings.state.enableModelInfo) {
+            mainGroup.add(ModelInfoAction())
+        }
         if (settings.state.enableCleanChat) {
             mainGroup.add(CleanChatAction())
         }
@@ -292,7 +297,7 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
         // Подписка на смену темы
         ApplicationManager.getApplication().messageBus.connect(this)
             .subscribe(LafManagerListener.TOPIC, LafManagerListener {
-                val isDark = com.intellij.util.ui.StartupUiUtil.isDarkTheme
+                val isDark = isDarkTheme()
                 val background = com.intellij.ui.ColorUtil.toHtmlColor(com.intellij.util.ui.JBUI.CurrentTheme.ToolWindow.background())
                 val foreground = com.intellij.ui.ColorUtil.toHtmlColor(JBColor.foreground())
                 val border = com.intellij.ui.ColorUtil.toHtmlColor(JBColor.border())
@@ -300,14 +305,16 @@ class ChatPanel(private val project: Project) : SimpleToolWindowPanel(true, true
                 SwingUtilities.invokeLater { rebuildChatBlocksFromTasks() }
             })
 
+
         // Отложенная инициализация браузера
-        StartupManager.getInstance(project).runAfterOpened {
-            ApplicationManager.getApplication().invokeLater(
-                {
+        ApplicationManager.getApplication().executeOnPooledThread {
+            Thread.sleep(1000)
+
+            ApplicationManager.getApplication().invokeLater {
+                if (!project.isDisposed) {
                     initBrowser()
-                },
-                ModalityState.nonModal()
-            )
+                }
+            }
         }
 
         logger.info("ChatPanel initialized")

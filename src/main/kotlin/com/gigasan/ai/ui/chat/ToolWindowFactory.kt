@@ -42,16 +42,16 @@ class ChatToolWindowFactory : ToolWindowFactory {
                 val configurableClass = com.gigasan.ai.config.PluginSettingsConfigurable::class.java
 
                 ApplicationManager.getApplication().invokeLater {
-                    if (com.intellij.util.PlatformUtils.isPyCharm()) {
-                        // Специфичный хак для PyCharm: открываем изолированное окно
-                        // Создаем инстанс вручную для editConfigurable
-                        val configurable = com.gigasan.ai.config.PluginSettingsConfigurable(project)
-                        settingsUtil.editConfigurable(project, configurable)
-                    } else {
+//                    if (com.intellij.util.PlatformUtils.isPyCharm()) {
+//                        // Специфичный хак для PyCharm: открываем изолированное окно
+//                        // Создаем инстанс вручную для editConfigurable
+//                        val configurable = com.gigasan.ai.config.PluginSettingsConfigurable(project)
+//                        settingsUtil.editConfigurable(project, configurable)
+//                    } else {
                         // Для всех остальных IDE (IntelliJ IDEA, WebStorm и т.д.)
                         // используем стандартное общее окно настроек
                         settingsUtil.showSettingsDialog(project, configurableClass)
-                    }
+//                    }
                 }
             }
         }

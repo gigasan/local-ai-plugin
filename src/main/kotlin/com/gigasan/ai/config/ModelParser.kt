@@ -138,7 +138,6 @@ class ModelParser(project: Project) {
         )
     }
 
-
     // DTO под Open AI
     @Serializable
     data class OpenAiResponse(
@@ -172,14 +171,162 @@ class ModelParser(project: Project) {
         )
     }
 
-    fun parseModels(jsonString: String, apiId: Int): List<Model> {
-        val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
+    // DTO под Open Router
+    @Serializable
+    data class OpenRouterResponse(
+        val data: List<OpenRouterModel>,
+    )
 
+    @Serializable
+    data class OpenRouterModel(
+        val id: String? = null,
+
+        @SerialName("canonical_slug")
+        val canonicalSlug: String? = null,
+
+        @SerialName("hugging_face_id")
+        val huggingFaceId: String? = null,
+
+        val name: String? = null,
+        val created: Long? = null,
+        val description: String? = null,
+
+        @SerialName("context_length")
+        val contextLength: Int? = null,
+
+        val architecture: Architecture? = null,
+        val pricing: Pricing? = null,
+
+        @SerialName("top_provider")
+        val topProvider: TopProvider? = null,
+
+        @SerialName("per_request_limits")
+        val perRequestLimits: PerRequestLimits? = null,
+
+        @SerialName("supported_parameters")
+        val supportedParameters: List<String> = emptyList(),
+
+        @SerialName("default_parameters")
+        val defaultParameters: DefaultParameters? = null,
+
+        @SerialName("supported_voices")
+        val supportedVoices: List<String>? = null,
+
+        @SerialName("knowledge_cutoff")
+        val knowledgeCutoff: String? = null,
+
+        @SerialName("expiration_date")
+        val expirationDate: String? = null,
+
+        val links: Links? = null,
+    )
+
+    @Serializable
+    data class Architecture(
+        val modality: String,
+
+        @SerialName("input_modalities")
+        val inputModalities: List<String> = emptyList(),
+
+        @SerialName("output_modalities")
+        val outputModalities: List<String> = emptyList(),
+
+        val tokenizer: String,
+
+        @SerialName("instruct_type")
+        val instructType: String? = null
+    )
+
+    @Serializable
+    data class Pricing(
+        val prompt: String? = null,
+        val completion: String? = null,
+        val image: String? = null,
+        val audio: String? = null,
+
+        @SerialName("web_search")
+        val webSearch: String? = null,
+
+        @SerialName("internal_reasoning")
+        val internalReasoning: String? = null,
+
+        @SerialName("input_cache_read")
+        val inputCacheRead: String? = null,
+
+        @SerialName("input_cache_write")
+        val inputCacheWrite: String? = null,
+    )
+
+    @Serializable
+    data class TopProvider(
+        @SerialName("context_length")
+        val contextLength: Int? = null,
+
+        @SerialName("max_completion_tokens")
+        val maxCompletionTokens: Int? = null,
+
+        @SerialName("is_moderated")
+        val isModerated: Boolean
+    )
+
+    @Serializable
+    data class PerRequestLimits(
+        val value: Int,
+        // Пока пусто, т.к. в ответе приходит null.
+        // Можно заполнить позже, если API начнет возвращать объект.
+    )
+
+    @Serializable
+    data class DefaultParameters(
+        val temperature: Double? = null,
+
+        @SerialName("top_p")
+        val topP: Double? = null,
+
+        @SerialName("top_k")
+        val topK: Int? = null,
+
+        @SerialName("frequency_penalty")
+        val frequencyPenalty: Double? = null,
+
+        @SerialName("presence_penalty")
+        val presencePenalty: Double? = null,
+
+        @SerialName("repetition_penalty")
+        val repetitionPenalty: Double? = null
+    )
+
+    @Serializable
+    data class Links(
+        val details: String
+    )
+
+    fun OpenRouterModel.toModel(): Model {
+        return Model(
+            key = canonicalSlug?:"",
+            displayName = name?:"",
+            size = 0,           // нет в OpenRouter
+            format = "unknown", // нет в OpenRouter
+            quant = "unknown",  // нет в OpenRouter
+            params = "unknown", // нет в OpenRouter
+            arc = "unknown",    // нет в OpenRouter
+            maxContext = contextLength?.toLong()?:0,
+            tools = false,      // нет в OpenAI
+            source = Source.OPEN_ROUTER,
+            reasoningOptions = emptyList(), // нет в OpenAI
+            description = description ?: "",
+        )
+    }
+
+    fun parseModels(jsonString: String, apiId: Int): List<Model> {
+        logger.info("BackendApi ${BackendApi.fromId(apiId).name}")
+        val isInternal = com.intellij.openapi.application.ApplicationManager.getApplication().isInternal
         val json = Json {
             // Если мы в режиме разработки, хотим знать о новых полях (будет ошибка)
             // Если у пользователя — игнорируем всё лишнее
             ignoreUnknownKeys = !isInternal
             coerceInputValues = !isInternal
+            isLenient = !isInternal
         }
 
         val list = try {
@@ -202,6 +349,11 @@ class ModelParser(project: Project) {
 //                    claudeResponse.data.map { it.toModel() }
                     emptyList()
                 }
+                BackendApi.OPEN_ROUTER_API -> {
+                    val openRouterResponse = json.decodeFromString<OpenRouterResponse>(jsonString)
+                    openRouterResponse.data.map { it.toModel() }
+                }
+
             }
         } catch (e: Exception) {
             logger.warn("Failed parsing JSON", e)

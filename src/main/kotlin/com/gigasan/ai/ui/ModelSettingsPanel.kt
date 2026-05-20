@@ -11,7 +11,6 @@ import com.gigasan.ai.config.storage.PluginSettingsService
 import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.config.storage.supportsReasoning
 import com.gigasan.ai.core.FileLogger
-import com.gigasan.ai.core.createModelListRenderer
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project

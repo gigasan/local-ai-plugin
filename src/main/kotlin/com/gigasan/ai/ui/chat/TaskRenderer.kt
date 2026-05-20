@@ -1,5 +1,6 @@
 package com.gigasan.ai.ui.chat
 
+import com.gigasan.ai.core.isDarkTheme
 import com.gigasan.ai.runtime.AIMetrics
 import com.gigasan.ai.ui.chat.HtmlProcessor.normalizeLanguage
 import com.intellij.openapi.diagnostic.Logger
@@ -29,7 +30,7 @@ class TaskRenderer(
 
     private fun generateThemeStyles(): String {
         // Проверяем, темная ли тема сейчас в IDE
-        val isDark = com.intellij.util.ui.StartupUiUtil.isDarkTheme
+        val isDark = isDarkTheme()
 
         // 1. КОНСТАНТЫ ЦВЕТОВ ДЛЯ ТЕМНОГО И СВЕТЛОГО РЕЖИМОВ
         val panelBg      = if (isDark) "#191a1c" else "#f2f2f2" // Основной фон чата
@@ -134,7 +135,7 @@ class TaskRenderer(
         for (lang in languages.sorted()) {
             expandLanguages(lang, deps, result)
         }
-        val isDark = com.intellij.util.ui.StartupUiUtil.isDarkTheme
+        val isDark = isDarkTheme()
         // Загружаем нужный файл в зависимости от темы IDE
         val prismCss = if (isDark) {
             this::class.java.getResource("/css/prism-tomorrow.min.css")?.readText() ?: ""
@@ -774,12 +775,6 @@ fun loadResource(path: String): String {
         ?.use { it.readText() }
         ?: error("Resource not found: $path")
 }
-
-fun isDarkTheme(): Boolean {
-    val lookAndFeel = UIManager.getLookAndFeel().name.lowercase();
-    return lookAndFeel.contains("darcula") || lookAndFeel.contains("dark");
-}
-
 
 /*
 * Если factor > 1 цвет становится ярче

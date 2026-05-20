@@ -55,9 +55,6 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.FlowLayout
 import java.awt.Font
-import com.intellij.ui.DocumentAdapter
-import com.sun.java.accessibility.util.SwingEventMonitor.addDocumentListener
-import org.eclipse.lsp4j.ShowMessageRequestParams
 import org.jetbrains.annotations.NotNull
 
 class TaskCompositorDialog(
@@ -102,7 +99,7 @@ class TaskCompositorDialog(
             return super.getToolTipText(event)
         }
     }.apply {
-        cellRenderer = MyTwoLineRenderer(
+        cellRenderer = WorkItemRenderer(
             ProjectSettingsService.getInstance(project).state.fontName,
             ProjectSettingsService.getInstance(project).state.fontSize
         )
@@ -205,7 +202,7 @@ class TaskCompositorDialog(
                     // 1. Обновляем поле в самом объекте данных
                     selected.description = descriptionField.text
                     // 2. Уведомляем список, что данные внутри элемента изменились,
-                    // чтобы MyTwoLineRenderer мог перерисовать заголовок в списке
+                    // чтобы WorkItemRenderer мог перерисовать заголовок в списке
                     val index = tasksList.selectedIndex
                     if (index != -1) {
                         tasksModel.setElementAt(selected, index)
@@ -229,7 +226,7 @@ class TaskCompositorDialog(
                     // 1. Обновляем поле в самом объекте данных
                     selected.text = editorField.text
                     // 2. Уведомляем список, что данные внутри элемента изменились,
-                    // чтобы MyTwoLineRenderer мог перерисовать заголовок в списке
+                    // чтобы WorkItemRenderer мог перерисовать заголовок в списке
                     val index = tasksList.selectedIndex
                     if (index != -1) {
                         tasksModel.setElementAt(selected, index)
@@ -291,7 +288,7 @@ class TaskCompositorDialog(
             preferredSize = Dimension((1280/1.5).toInt(), (720/1.5).toInt())
         }
 
-        tasksList.cellRenderer = MyTwoLineRenderer(
+        tasksList.cellRenderer = WorkItemRenderer(
             ProjectSettingsService.getInstance(project).state.fontName,
             ProjectSettingsService.getInstance(project).state.fontSize)
 

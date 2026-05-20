@@ -14,7 +14,6 @@ import javax.swing.*
 import kotlin.text.trim
 import com.gigasan.ai.config.storage.InstructionsService
 import com.gigasan.ai.config.storage.ProjectSettingsService
-import com.gigasan.ai.core.createTooltipRenderer
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.intellij.openapi.fileChooser.FileChooser

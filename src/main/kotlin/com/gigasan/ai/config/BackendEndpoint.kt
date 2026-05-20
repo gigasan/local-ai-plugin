@@ -16,7 +16,8 @@ enum class BackendEndpoint(val engine: BackendEngine, val api: BackendApi) {
     OLLAMA_ANTHROPIC_ENDPOINT(OLLAMA, CLAUDE_API),
 
     OPEN_AI_ENDPOINT(OPEN_AI, OPEN_AI_API),
-    CLAUDE_ENDPOINT(CLAUDE, CLAUDE_API);
+    CLAUDE_ENDPOINT(CLAUDE, CLAUDE_API),
+    OPEN_ROUTER_ENDPOINT(OPEN_ROUTER, OPEN_ROUTER_API);
 
 
 //    var settings = EndpointSettings()
@@ -32,6 +33,7 @@ enum class BackendEndpoint(val engine: BackendEngine, val api: BackendApi) {
         OLLAMA_ANTHROPIC_ENDPOINT -> "OLLAMA Anthropic-compatible API Endpoint"
         OPEN_AI_ENDPOINT -> "OPEN AI API Endpoint"
         CLAUDE_ENDPOINT -> "ANTHROPIC API Endpoint"
+        OPEN_ROUTER_ENDPOINT -> "OPEN ROUTER API Endpoint"
     }
     override fun toString(): String = displayName   // ← самое важное для ComboBox
 
@@ -45,6 +47,7 @@ enum class BackendEndpoint(val engine: BackendEngine, val api: BackendApi) {
             OLLAMA_ANTHROPIC_ENDPOINT -> listOf("/v1/messages")
             OPEN_AI_ENDPOINT -> listOf("/v1/responses")
             CLAUDE_ENDPOINT -> listOf("/v1/messages")
+            OPEN_ROUTER_ENDPOINT -> listOf("/v1/responses")
         }
 
 
@@ -78,6 +81,7 @@ enum class BackendEndpoint(val engine: BackendEngine, val api: BackendApi) {
             OLLAMA_ANTHROPIC_ENDPOINT -> mutableListOf("/v1/models")
             OPEN_AI_ENDPOINT -> mutableListOf("/v1/models")
             CLAUDE_ENDPOINT -> mutableListOf("/v1/models")
+            OPEN_ROUTER_ENDPOINT -> mutableListOf("/api/v1/models")
         }
 
     // MODEL INFO (GET)

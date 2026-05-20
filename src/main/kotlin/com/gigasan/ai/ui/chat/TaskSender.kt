@@ -87,9 +87,10 @@ class TaskSender(
             val responseResult = clientStream.execute(project, chatContext, indicator) { event ->
                 onStreamEvent(event, indicator)
             }
+            logger.info("processChatTask got response.lenght=${responseResult.toString().length}")
 
             //val toolResult = toolClient.run(chatContext)
-            //logger.warn("toolResult = $toolResult")
+
             val endTime = System.currentTimeMillis()
             val result = responseResult.withDuration(endTime - startTime)
 

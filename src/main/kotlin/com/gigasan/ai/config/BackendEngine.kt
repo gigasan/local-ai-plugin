@@ -6,15 +6,17 @@ enum class BackendEngine(val id: Int, val displayName: String) {
     LM_STUDIO(0, "LM Studio"), // https://lmstudio.ai/docs/developer/rest/endpoints
     OLLAMA(1,    "Ollama"),    // https://docs.ollama.com/api/introduction
     OPEN_AI(2,   "Open AI"),   // https://developers.openai.com/api/docs
-    CLAUDE(3,    "Claude");    // https://platform.claude.com/docs/en/api/overview
+    CLAUDE(3,    "Claude"),    // https://platform.claude.com/docs/en/api/overview
+    OPEN_ROUTER(4, "Open Router");
 
     // HOST
     val defaultHost: List<String>
         get() = when (this) {
-            LM_STUDIO -> listOf("http://127.0.0.1:1234")
-            OLLAMA    -> listOf("http://127.0.0.1:11434")
-            OPEN_AI   -> listOf("https://api.openai.com")
-            CLAUDE    -> listOf("https://api.anthropic.com")
+            LM_STUDIO   -> listOf("http://127.0.0.1:1234")
+            OLLAMA      -> listOf("http://127.0.0.1:11434")
+            OPEN_AI     -> listOf("https://api.openai.com")
+            CLAUDE      -> listOf("https://api.anthropic.com")
+            OPEN_ROUTER -> listOf("https://openrouter.ai")
         }
 
     // Web link
@@ -24,6 +26,7 @@ enum class BackendEngine(val id: Int, val displayName: String) {
             OLLAMA    -> "https://ollama.com/"
             OPEN_AI   -> "https://openai.com"
             CLAUDE    -> "https://claude.com/"
+            OPEN_ROUTER -> "https://openrouter.ai/"
         }
 
     override fun toString(): String = displayName   // ← самое важное для ComboBox

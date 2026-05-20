@@ -1,10 +1,8 @@
 package com.gigasan.ai.ui
 
-import com.gigasan.ai.config.storage.ProjectSettingsService
 import com.gigasan.ai.config.storage.WorkItem
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.platform.ide.progress.ModalTaskOwner.project
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.SimpleTextAttributes
 import java.awt.Component
@@ -17,41 +15,12 @@ import javax.swing.JLabel
 import javax.swing.JPanel
 import java.awt.GridLayout
 
-
-
-class AdvancedPluginRenderer : SimpleColoredComponent(), ListCellRenderer<WorkItem> {
-    private val logger = Logger.getInstance("AdvancedPluginRenderer")
-    init {
-        isOpaque = true
-    }
-
-    override fun getListCellRendererComponent(
-        list: JList<out WorkItem>,
-        value: WorkItem,
-        index: Int,
-        isSelected: Boolean,
-        cellHasFocus: Boolean
-    ): Component {
-        clear()
-        icon = when (value.iconType) {
-            "Add" -> AllIcons.General.Add
-            "Remove" -> AllIcons.General.Remove
-            "Delete" -> AllIcons.General.Delete
-            "Web" -> AllIcons.General.Web
-            else -> AllIcons.General.TodoDefault
-        }
-        append(value.name, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
-        append("by ${value.author}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-        background = if (isSelected) list.selectionBackground else list.background
-        return this
-    }
-}
-
-class MyTwoLineRenderer(fontName: String, fontSize: Int) : JPanel(BorderLayout()), ListCellRenderer<WorkItem> {
+class WorkItemRenderer(fontName: String, fontSize: Int) : JPanel(BorderLayout()), ListCellRenderer<WorkItem> {
     private val titleComponent = SimpleColoredComponent()
     private val authorComponent = SimpleColoredComponent()
     private val iconLabel = JLabel()
     private val customFont = Font(fontName, Font.PLAIN, fontSize)
+    private val logger = Logger.getInstance("WorkItemRenderer")
 
     init {
         isOpaque = true

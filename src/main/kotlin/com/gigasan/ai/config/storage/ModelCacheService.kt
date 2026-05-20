@@ -75,7 +75,7 @@ data class ModelCache(
     @Attribute("timestamp") var timestamp: Long = 0
 )
 
-enum class Source { LM_STUDIO, OLLAMA, OPEN_AI }
+enum class Source { LM_STUDIO, OLLAMA, OPEN_AI, OPEN_ROUTER }
 
 @Tag("Model")
 data class Model(
@@ -89,6 +89,7 @@ data class Model(
     @Attribute("arc") var arc: String = "",
     @Attribute("maxContext") var maxContext: Long = 0,
     @Attribute("tools") var tools: Boolean = false,
+    @Attribute("description") var description: String = "",
 
     // reasoning Lm studio
     var reasoningOptions: List<String> = emptyList(),

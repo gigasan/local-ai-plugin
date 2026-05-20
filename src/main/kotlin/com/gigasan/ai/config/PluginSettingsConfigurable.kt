@@ -15,9 +15,9 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.builder.bindItem
 import com.gigasan.ai.core.JsonFileLogger
-import com.gigasan.ai.core.createTooltipRenderer
 import com.gigasan.ai.ui.InstructionsSettingsPanel
 import com.gigasan.ai.ui.ModelSettingsPanel
+import com.gigasan.ai.ui.createTooltipRenderer
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.gridLayout.UnscaledGapsY
 import com.intellij.util.ui.FontInfo

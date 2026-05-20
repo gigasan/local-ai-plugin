@@ -5,10 +5,11 @@ import com.gigasan.ai.config.BackendEngine.LM_STUDIO
 enum class BackendApi(val id: Int, val displayName: String) {
 
     // default, always enabled
-    LM_STUDIO_API (0, "LM Studio API"),
-    OLLAMA_API    (1, "Ollama API"),
-    OPEN_AI_API   (2, "OpenAI API"),
-    CLAUDE_API    (3, "Anthropic API");
+    LM_STUDIO_API   (0, "LM Studio API"),
+    OLLAMA_API      (1, "Ollama API"),
+    OPEN_AI_API     (2, "OpenAI API"),
+    CLAUDE_API      (3, "Anthropic API"),
+    OPEN_ROUTER_API (4, "Open Router API");
 
 
 

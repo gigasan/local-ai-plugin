@@ -4,31 +4,12 @@ import com.gigasan.ai.config.BackendApi
 import com.gigasan.ai.core.JsonFileLogger
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonDecoder
-import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
-import kotlin.collections.contains
-
-
-enum class ResponseKind {
-    LM_STUDIO,
-    OLLAMA,
-    OPENAI_CHAT,
-    OPENAI_RESPONSES,
-    ERROR,
-    UNKNOWN
-}
 
 enum class ErrorCategory {
     AUTH,
@@ -117,42 +98,13 @@ data class ApiErrorResponse(
     val error: ApiError
 )
 
-@Serializable(with = ApiErrorSerializer::class)
+@Serializable
 data class ApiError(
     val message: String,
     val type: String? = null,
     val param: String? = null,
     val code: String? = null
 )
-
-object ApiErrorSerializer : KSerializer<ApiError> {
-    // Используем дескриптор суррогата, чтобы kotlinx.serialization знал структуру
-    override val descriptor: SerialDescriptor = ApiError.serializer().descriptor
-
-    override fun deserialize(decoder: Decoder): ApiError {
-        // Проверяем, что работаем именно с JSON-декодером
-        val input = decoder as? JsonDecoder
-            ?: throw IllegalStateException("This serializer can only be used with Json")
-
-        val element = input.decodeJsonElement()
-
-        return if (element is JsonPrimitive) {
-            // Сценарий Ollama: "error" — это просто строка (JsonLiteral)
-            ApiError(message = element.content)
-        } else {
-            // Сценарий OpenAI/другие: "error" — это полноценный JsonObject
-            // Декодируем стандартным сгенерированным сериализатором
-            input.json.decodeFromJsonElement(ApiError.serializer(), element)
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: ApiError) {
-        val output = encoder as? JsonEncoder
-            ?: throw IllegalStateException("This serializer can only be used with Json")
-        // Для обратной сериализации используем стандартное поведение
-        output.encodeJsonElement(output.json.encodeToJsonElement(ApiError.serializer(), value))
-    }
-}
 
 fun ApiError.toError(raw: String): ResponseResult {
     val category = when (type) {
@@ -252,71 +204,54 @@ class ResponseParser(val project: Project,  backendApi: BackendApi): JsonFileLog
         val obj = element.jsonObject
         val responseType = classify(obj)
         saveJson(project, "response_${responseType}_raw", raw)
-        logger.info("parse $responseType")
 
-        return when (responseType) {
+        val result = when (responseType) {
             ResponseType.Error -> {
-                // Десериализуем с помощью нашего гибкого класса
-                val errorResponse = json.decodeFromString<ApiErrorResponse>(raw)
-                val apiError = errorResponse.error
+                logger.info("ResponseType.Error")
+                try {
+                    val errorResponse = json.decodeFromString<ApiErrorResponse>(raw)
+                    val apiError = errorResponse.error
+                    apiError.toError(raw)
+                } catch (e: Exception) {
+                    logger.warn("Error parse of JSON Error: ${e.message}", e)
 
-                ResponseResult.Error(
-                    message = apiError.message,
-                    category = ErrorCategory.SERVER,
-                    type = apiError.type,
-                    code = apiError.code,
-                    param = apiError.param,
-                    raw = raw
-                )
+                    // Фоллбэк на случай, если структура объекта слегка поплыла
+                    ResponseResult.Error(
+                        message = "Can't parse error object. Raw answer: $raw",
+                        category = ErrorCategory.SERVER,
+                        type = "parsing_error",
+                        code = "unknown",
+                        param = null,
+                        raw = raw
+                    )
+                }
             }
 
-            ResponseType.LmStudio ->
+            ResponseType.LmStudio -> {
+                logger.info("ResponseType.LmStudio")
                 lmStudioParser.parse(raw)
+            }
 
-            ResponseType.OpenAIResponses ->
+            ResponseType.OpenAIResponses -> {
+                logger.info("ResponseType.OpenAIResponses")
                 openAiParser.parseResponses(raw)
+            }
 
-            ResponseType.OpenAIChat ->
+            ResponseType.OpenAIChat -> {
+                logger.info("ResponseType.OpenAIChat")
                 openAiParser.parseChatCompletion(raw)
+            }
 
-            ResponseType.Ollama ->
+            ResponseType.Ollama -> {
+                logger.info("ResponseType.Ollama")
                 ollamaParser.parse(raw)
+            }
 
-            ResponseType.Unknown ->
+            ResponseType.Unknown -> {
+                logger.info("ResponseType.Unknown")
                 fallback(raw)
+            }
         }
+        return result
     }
 }
-
-
-
-
-/*
-@Serializable
-data class LMStudioDelta(
-    val type: String,
-    val content: String? = null,           // для дельт
-    val progress: Double? = null,          // для prompt_processing
-    val model_instance_id: String? = null, // для chat.start
-    val result: LMStudioResponse? = null   // для chat.end
-)
-
-@Serializable
-data class Error(
-    val type: String,
-    val message: String,
-    val code: String,
-    val param: String
-)
-
-@Serializable
-data class AIStats(
-    val input_tokens: Int,
-    val total_output_tokens: Int,
-    val tokens_per_second: Double
-)
-
-@Serializable
-data class LMEvent(val type: String, val progress: Double? = null)
-
-*/

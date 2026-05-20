@@ -2,6 +2,7 @@ package com.gigasan.ai.config
 
 import com.gigasan.ai.config.storage.EndpointSettings
 import com.gigasan.ai.config.storage.InstructionsService
+import com.gigasan.ai.config.storage.Model
 import com.gigasan.ai.config.storage.ModelCache
 import com.gigasan.ai.config.storage.ModelCacheService
 import com.gigasan.ai.config.storage.PluginSettingsService
@@ -38,6 +39,7 @@ interface PluginConfigProvider {
     fun buildReasoning(): String?
     fun buildRequestBody(prompt: String): JsonObject
     fun buildExtraParams(prompt: String): JsonObject
+    fun buildActiveModel(): Model?
 }
 
 @Service(Service.Level.PROJECT) // Без регистрации в plugin.xml!
@@ -184,5 +186,9 @@ class DefaultChatConfigProvider(private val project: Project): PluginConfigProvi
         }
         return body
     }
-
+    override fun buildActiveModel(): Model? {
+        val settings = buildEndpointSetting()
+        val model = ModelCacheService.instance.getSettingsFor(buildBackendEndpoint()).models.find { it.key == settings.selectedModelKey }
+        return model
+    }
 }

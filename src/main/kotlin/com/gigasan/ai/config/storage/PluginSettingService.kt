@@ -28,6 +28,7 @@ class PluginSettingsService : PersistentStateComponent<PluginSettingsService.Sta
         var enableDebugFeature: Boolean = false,
         var enableTaskCompositor: Boolean = true,
         var enableCleanChat: Boolean = true,
+        var enableModelInfo: Boolean = true,
         var enableAutoSearch: Boolean = true,
         var enableDevToolsAction: Boolean = false,
 
@@ -40,6 +41,7 @@ class PluginSettingsService : PersistentStateComponent<PluginSettingsService.Sta
             BackendEndpoint.OLLAMA_OPENAI_ENDPOINT,
             //BackendEndpoint.OLLAMA_ANTHROPIC_ENDPOINT,
             BackendEndpoint.OPEN_AI_ENDPOINT,
+            //BackendEndpoint.OPEN_ROUTER_ENDPOINT,
         ),
         // Хранилище настроек для каждого эндпоинта
         @XMap(
