@@ -1,5 +1,6 @@
 package com.gigasan.ai.core
 
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.util.TextRange
@@ -7,6 +8,7 @@ import com.intellij.util.ui.UIUtil
 import com.knuddels.jtokkit.Encodings
 import com.knuddels.jtokkit.api.EncodingType
 import java.awt.Color
+import java.awt.datatransfer.StringSelection
 
 object TokenCalculator {
     private val registry = Encodings.newDefaultEncodingRegistry()
@@ -80,4 +82,8 @@ fun isDarkTheme(): Boolean {
     return isDarkColor(bg)
 }
 
-
+fun copyToClipboard(text: String) {
+    if (text.isNotEmpty()) {
+        CopyPasteManager.getInstance().setContents(StringSelection(text))
+    }
+}

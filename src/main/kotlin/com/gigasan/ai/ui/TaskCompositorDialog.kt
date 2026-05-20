@@ -9,6 +9,7 @@ import com.gigasan.ai.config.storage.ModelCache
 import com.gigasan.ai.config.storage.ModelCacheService
 import com.gigasan.ai.config.storage.TaskSequence
 import com.gigasan.ai.core.TokenCalculator
+import com.gigasan.ai.core.copyToClipboard
 import com.gigasan.ai.core.countWords
 import com.gigasan.ai.ui.chat.ChatPanel
 import com.gigasan.ai.ui.chat.HtmlProcessor.wrapCode
@@ -531,11 +532,14 @@ class TaskCompositorDialog(
                     }
                 }
             })
+            .addExtraAction(object : AnAction("Import JSON", "Import tasks from JSON", AllIcons.Actions.MenuOpen) {
+                override fun actionPerformed(e: AnActionEvent) = importFromJson()
+            })
             .addExtraAction(object : AnAction("Export JSON", "Export all tasks to JSON", AllIcons.Actions.MenuSaveall) {
                 override fun actionPerformed(e: AnActionEvent) = exportToJson()
             })
-            .addExtraAction(object : AnAction("Import JSON", "Import tasks from JSON", AllIcons.Actions.MenuOpen) {
-                override fun actionPerformed(e: AnActionEvent) = importFromJson()
+            .addExtraAction(object : AnAction("Copy Composed Task", "Copy assembled task items to clipboard", AllIcons.Actions.Copy) {
+                override fun actionPerformed(e: AnActionEvent) = copyRequestToClipboard()
             })
 
 
@@ -572,9 +576,23 @@ class TaskCompositorDialog(
         return rootPanel
     }
 
-
     private val gson = GsonBuilder().setPrettyPrinting().create()
 
+    private fun copyRequestToClipboard() {
+        val problemSection = getProblem(includeProblemCheckBox.isSelected, wrapDataCheckBox.isSelected, includeItemNameCheckBox.isSelected)
+
+        if (problemSection.isBlank()) {
+            Messages.showWarningDialog("Request is empty", "Copy Request")
+            return
+        }
+
+        try {
+            copyToClipboard(problemSection.trim())
+        } catch (ex: Exception) {
+            Messages.showErrorDialog("Failed to copy to clipboard: ${ex.message}", "Error")
+            logger.warn("Clipboard error", ex)
+        }
+    }
     private fun exportToJson() {
         val descriptor = FileSaverDescriptor("Export Tasks to JSON", "Choose destination file").apply {
             withExtensionFilter("JSON files", "json")
