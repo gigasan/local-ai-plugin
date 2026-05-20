@@ -732,8 +732,15 @@ class TaskRenderer(
             append("<div class='chat-body'>")
             append("<div class='chat'>")
             if (task.question.isNotBlank()) {
-                append("<div class='bubble-user'>")
-                append("<button class='collapse-btn' onclick='toggleBubble(this)'>collapse</button>")
+                // Проверяем, есть ли ответ
+                val hasAnswer = task.answer.isNotBlank()
+                // Если ответ есть, сразу вешаем класс collapsed
+                val bubbleClass = if (hasAnswer) "bubble-user collapsed" else "bubble-user"
+                // И меняем текст кнопки соответственно
+                val btnText = if (hasAnswer) "expand" else "collapse"
+
+                append("<div class='$bubbleClass'>")
+                append("<button class='collapse-btn' onclick='toggleBubble(this)'>$btnText</button>")
                 append(MarkdownRenderer.toHtml(task.question))
                 append("</div>")
             }
