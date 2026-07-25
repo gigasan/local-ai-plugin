@@ -37,7 +37,7 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "253"      // с 2025.3.2 и новее
-            untilBuild = "261.*"    // до 2026.1 включительно
+            untilBuild = "262.*"    // до 2026.2 включительно
         }
     }
 }

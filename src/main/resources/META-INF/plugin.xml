@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.gigasan.ai</id>
     <name>Local AI Chat</name>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
     <vendor url="https://github.com/gigasan">GigaSan</vendor>
 
     <description>
